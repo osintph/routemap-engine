@@ -58,3 +58,9 @@ commercial use. Any source can be switched off.
 ## Licence
 
 GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests need the
+[Contributor Licence Agreement](CLA.md), signed once with a comment, and may be
+declined.
