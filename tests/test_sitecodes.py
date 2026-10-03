@@ -5,14 +5,14 @@ letter string is not evidence: "lax" is inside "relaxed", and customer
 hostnames are full of city-ish fragments that mean nothing. So most of this
 file is about what must NOT match.
 
-See routemap/engine/data/README.md for how to add a carrier.
+See routemap_engine/data/README.md for how to add a carrier.
 """
 import pathlib
 import re
 
 import pytest
 
-from routemap.engine import sitecodes
+from routemap_engine import sitecodes
 
 DATA = pathlib.Path(sitecodes.DATA_FILE)
 
@@ -20,7 +20,7 @@ DATA = pathlib.Path(sitecodes.DATA_FILE)
 # ---------- the table itself ----------
 
 def test_the_table_ships_and_is_not_empty():
-    assert DATA.exists(), f"{DATA} is missing; run python -m routemap.engine.sitegen"
+    assert DATA.exists(), f"{DATA} is missing; run python -m routemap_engine.sitegen"
     assert sitecodes.count() > 50
 
 

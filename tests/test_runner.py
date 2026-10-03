@@ -12,9 +12,9 @@ import time
 
 import pytest
 
-from routemap.engine import runner
-from routemap.engine.parse import parse_trace
-from routemap.engine.target import InvalidTarget
+from routemap_engine import runner
+from routemap_engine.parse import parse_trace
+from routemap_engine.target import InvalidTarget
 
 HERE = pathlib.Path(__file__).resolve().parent
 FAKE = str(HERE / "helpers" / "fake_trace_tool.py")

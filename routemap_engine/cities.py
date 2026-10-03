@@ -3,7 +3,7 @@ The bundled offline city list, for the Route Map origin picker.
 
 WHAT IT IS AND WHERE IT CAME FROM
 ---------------------------------
-``routemap/engine/data/cities.tsv`` is GeoNames' ``cities15000`` dump (every
+``routemap_engine/data/cities.tsv`` is GeoNames' ``cities15000`` dump (every
 populated place above 15,000 people, 34,152 rows), trimmed to the seven columns
 this feature uses and with the coordinates rounded to two decimal places.
 

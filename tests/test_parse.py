@@ -14,7 +14,7 @@ import pathlib
 
 import pytest
 
-from routemap.engine.parse import (MAX_TRACE_BYTES, TraceParseError,
+from routemap_engine.parse import (MAX_TRACE_BYTES, TraceParseError,
                                 is_routable_hostname, parse_trace)
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures" / "routemap"

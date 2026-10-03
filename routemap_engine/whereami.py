@@ -17,10 +17,10 @@ import logging
 
 import httpx
 
-from routemap.engine import cities, geo
-from routemap.engine.logsafe import tag
+from routemap_engine import cities, geo
+from routemap_engine.logsafe import tag
 
-log = logging.getLogger("routemap.engine.whereami")
+log = logging.getLogger("routemap_engine.whereami")
 
 WHATS_MY_IP = "https://stat.ripe.net/data/whats-my-ip/data.json"
 NETWORK_INFO = "https://stat.ripe.net/data/network-info/data.json"

@@ -8,7 +8,7 @@ its own and never asks for elevated privileges.
 HOW THE TOOL IS RUN
 -------------------
 * An argument list, never a shell. The target goes through
-  :func:`routemap.engine.target.validate_target` first, which accepts only a
+  :func:`routemap_engine.target.validate_target` first, which accepts only a
   hostname or an IP address, so it can be neither a flag ("-x") nor anything a
   shell would interpret.
 * Output is streamed line by line to ``on_line`` as the tool prints it, so a
@@ -51,7 +51,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from routemap.engine.target import validate_target
+from routemap_engine.target import validate_target
 
 TOOL_TRACERT = "tracert"
 TOOL_TRACEROUTE = "traceroute"

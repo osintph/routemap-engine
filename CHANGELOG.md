@@ -1,0 +1,26 @@
+# Changelog
+
+Keep a Changelog format; this project uses Semantic Versioning.
+
+## [0.2.0] - 2026-10-03
+
+First release as its own package, `routemap-engine` (import `routemap_engine`),
+split out of the Route Map desktop app's repository with its history.
+
+### Added
+
+- Progressive placement: `progressive.ProgressiveTrace` places each hop as its
+  line of tool output arrives, with the full source order and the RTT bound,
+  and leaves only ECMP cleanup and the path-wide annotations to the end. Its
+  final route is identical to a one-shot `analyse()` of the same text.
+- Hops placed only to country level (the IP database had no city) carry
+  `"precision": "country"`, so no renderer draws a country centroid as a city.
+
+### Changed
+
+- The import name is `routemap_engine` (was `routemap.engine`).
+
+## [0.1.0-beta.1] and [0.1.0.dev1]
+
+Tagged in the combined repository before the split; see the history. 0.1.0.dev1
+is the extraction from FalconEye v3.35.3 that FalconEye v3.36.0 pinned.

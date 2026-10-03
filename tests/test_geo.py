@@ -7,8 +7,8 @@ of the internet. Both directions are tested.
 """
 import pytest
 
-from routemap.engine import geo
-from routemap.engine.parse import Hop
+from routemap_engine import geo
+from routemap_engine.parse import Hop
 
 MANILA = (14.6, 121.0)
 HONG_KONG = (22.28, 114.17)

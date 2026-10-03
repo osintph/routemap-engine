@@ -16,7 +16,7 @@ import asyncio
 import httpx
 import pytest
 
-from routemap.engine import hoiho
+from routemap_engine import hoiho
 
 
 # A client with no cache, so every test here exercises the network path. With
@@ -158,8 +158,8 @@ def test_nothing_that_is_not_a_router_hostname_is_ever_sent(monkeypatch):
 
 def test_the_source_can_be_switched_off(monkeypatch):
     """Off means never contacted, not contacted and ignored."""
-    from routemap.engine import geo
-    from routemap.engine.parse import Hop
+    from routemap_engine import geo
+    from routemap_engine.parse import Hop
 
     async def boom(self, *args, **kwargs):
         raise AssertionError("Hoiho was contacted while switched off")
@@ -175,7 +175,7 @@ def test_the_source_can_be_switched_off(monkeypatch):
 
 def test_a_cached_answer_is_not_asked_for_again(monkeypatch):
     """Misses are the common case, so a cached miss must stop a second request."""
-    from routemap.engine.cache import MemoryCache
+    from routemap_engine.cache import MemoryCache
 
     calls = []
 

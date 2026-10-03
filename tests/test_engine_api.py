@@ -12,12 +12,12 @@ import re
 import jsonschema
 import pytest
 
-from routemap.engine import (OFFLINE, Route, Sources, TraceParseError, analyse,
+from routemap_engine import (OFFLINE, Route, Sources, TraceParseError, analyse,
                              analyse_sync, geo, schema)
-from routemap.engine.parse import Hop
+from routemap_engine.parse import Hop
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures" / "routemap"
-ENGINE = pathlib.Path(__file__).resolve().parents[1] / "routemap" / "engine"
+ENGINE = pathlib.Path(__file__).resolve().parents[1] / "routemap_engine"
 MANILA = (14.6, 121.0)
 ALL_FIXTURES = sorted(p.name for p in FIXTURES.glob("*.txt"))
 

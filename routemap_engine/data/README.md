@@ -16,7 +16,7 @@ coordinates in the feature, including for `site_codes.tsv`.
 <https://download.geonames.org/export/dump/readme.txt>, checked 2026-10-03:
 "This work is licensed under a Creative Commons Attribution 4.0 License, see
 https://creativecommons.org/licenses/by/4.0/". Attribution is carried in the
-file header, in `routemap/engine/cities.py` (`ATTRIBUTION`, which every user
+file header, in `routemap_engine/cities.py` (`ATTRIBUTION`, which every user
 interface shows next to the origin picker), and in the repository README. If you
 remove it from one of those, the others still satisfy the licence; do not remove
 it from all of them.
@@ -38,8 +38,8 @@ that carrier says the site is in. This is the `site-code` geolocation source.
 **Generated.** Do not hand-edit it. Run:
 
 ```bash
-python -m routemap.engine.sitegen --dry-run   # show what would change
-python -m routemap.engine.sitegen             # rewrite the table
+python -m routemap_engine.sitegen --dry-run   # show what would change
+python -m routemap_engine.sitegen             # rewrite the table
 ```
 
 Columns: `carrier`, `code`, `city`, `cc`, `lat`, `lon`, `source_ref`. The
@@ -53,7 +53,7 @@ So the rule is never "this hostname contains a code", it is "this carrier, in
 its own backbone namespace, names this site this way":
 
 - A pattern applies only under that carrier's backbone zones, listed in
-  `CARRIERS` in `routemap/engine/sitecodes.py`.
+  `CARRIERS` in `routemap_engine/sitecodes.py`.
 - Customer-facing zones are excluded there. A customer interconnect is named
   after the customer, not the site: `plusline-ic-323934.ip.twelve99-cust.net`
   is Plus.line's interconnect, and reading `plusline` as a site code would be
@@ -65,7 +65,7 @@ its own backbone namespace, names this site this way":
   approximated. Arelion's Bettembourg PoP has no row for that reason.
 
 A site-code location is still only a claim. It goes through the same RTT
-physics bound as every other source in `routemap/engine/geo.py`: if the hostname
+physics bound as every other source in `routemap_engine/geo.py`: if the hostname
 says Hong Kong and the round trip cannot reach Hong Kong, the hop is not placed
 in Hong Kong.
 
@@ -75,11 +75,11 @@ in Hong Kong.
    its nodes, an operator network page, PeeringDB facility data, or equivalent.
    A list you inferred from traceroutes you have seen is not a source. If you
    cannot point at a published mapping, the carrier does not go in the table.
-2. Add an entry to `CARRIERS` in `routemap/engine/sitegen.py` with a `fetch()`
+2. Add an entry to `CARRIERS` in `routemap_engine/sitegen.py` with a `fetch()`
    returning `{router_name: "City (facility)"}`, a `code_of()` that turns a
    router name into its site code, and `source_ref` / `source_url` /
    `source_kind` describing where it came from.
-3. Add the matching entry to `CARRIERS` in `routemap/engine/sitecodes.py`, naming
+3. Add the matching entry to `CARRIERS` in `routemap_engine/sitecodes.py`, naming
    the backbone `suffixes` and any customer `exclude` zones.
 4. Run the generator. Resolve or accept every line it prints under
    "NOT INCLUDED" before trusting the result.

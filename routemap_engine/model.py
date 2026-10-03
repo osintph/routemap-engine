@@ -27,10 +27,10 @@ import logging
 from dataclasses import dataclass, field
 from importlib import resources
 
-from routemap.engine import cities, geo
-from routemap.engine.parse import PARSER_LABELS, Hop, ParsedTrace, TraceParseError, parse_trace
+from routemap_engine import cities, geo
+from routemap_engine.parse import PARSER_LABELS, Hop, ParsedTrace, TraceParseError, parse_trace
 
-log = logging.getLogger("routemap.engine.model")
+log = logging.getLogger("routemap_engine.model")
 
 # Where the path starts, and how we know.
 ORIGIN_SUPPLIED = "supplied"     # the caller gave coordinates
@@ -82,7 +82,7 @@ class Route:
 
 def schema() -> dict:
     """The JSON Schema for :meth:`Route.to_dict`."""
-    text = resources.files("routemap.engine").joinpath("route.schema.json").read_text("utf-8")
+    text = resources.files("routemap_engine").joinpath("route.schema.json").read_text("utf-8")
     return json.loads(text)
 
 

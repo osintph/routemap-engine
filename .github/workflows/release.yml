@@ -1,0 +1,67 @@
+# On a version tag: test, build the sdist and wheel, publish to PyPI by trusted
+# publishing (no API token stored anywhere), and create the GitHub release.
+#
+# One-time setup on pypi.org (the project owner): Publishing > Add a pending
+# publisher: project "routemap-engine", owner "osintph", repository
+# "routemap-engine", workflow "release.yml", environment "pypi".
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]" build
+      - run: python -m pytest
+      - name: Version matches tag
+        run: |
+          V="$(python -c 'from routemap_engine.__about__ import __version__ as v; print(v)')"
+          test "v$V" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but version $V"; exit 1; }
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          TITLE="$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "${TITLE:-$GITHUB_REF_NAME}" \
+            --notes "See CHANGELOG.md." --verify-tag

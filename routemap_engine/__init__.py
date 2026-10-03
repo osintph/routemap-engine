@@ -1,7 +1,7 @@
 """
 The Route Map engine. Pure Python: nothing in this package imports Qt.
 
-    from routemap.engine import analyse_sync, run_trace, TraceOptions
+    from routemap_engine import analyse_sync, run_trace, TraceOptions
 
     result = run_trace("heise.de", TraceOptions(on_line=print))
     route = analyse_sync(result.text, origin=(14.6, 121.0))
@@ -10,14 +10,14 @@ The Route Map engine. Pure Python: nothing in this package imports Qt.
 FalconEye imports this package for its Route Map tab, so anything added here
 ships to a web server as well as to the desktop app.
 """
-from routemap.engine.cache import MemoryCache, NullCache, SqliteCache
-from routemap.engine.geo import OFFLINE, Sources, default_sources
-from routemap.engine.model import (Route, analyse, analyse_sync, normalise_origin,
+from routemap_engine.cache import MemoryCache, NullCache, SqliteCache
+from routemap_engine.geo import OFFLINE, Sources, default_sources
+from routemap_engine.model import (Route, analyse, analyse_sync, normalise_origin,
                                    origin_block, schema)
-from routemap.engine.parse import Hop, ParsedTrace, TraceParseError, parse_trace
-from routemap.engine.runner import (TraceOptions, TraceResult, TraceToolMissing,
+from routemap_engine.parse import Hop, ParsedTrace, TraceParseError, parse_trace
+from routemap_engine.runner import (TraceOptions, TraceResult, TraceToolMissing,
                                     available_tools, install_hint, run_trace)
-from routemap.engine.target import InvalidTarget, validate_target
+from routemap_engine.target import InvalidTarget, validate_target
 
 __all__ = [
     "Hop", "InvalidTarget", "MemoryCache", "NullCache", "OFFLINE", "ParsedTrace",

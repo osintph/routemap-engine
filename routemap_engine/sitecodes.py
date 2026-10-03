@@ -30,15 +30,15 @@ customer hostnames routinely contain city-ish fragments that mean nothing. So:
   twelve99-cust.net`` must not be read as a site code, and is not, because
   ``ip.twelve99-cust.net`` is excluded.
 * a code that the carrier uses for two different cities is dropped at build
-  time rather than guessed at (see ``ewr`` in routemap/engine/sitegen.py).
+  time rather than guessed at (see ``ewr`` in routemap_engine/sitegen.py).
 
 Every row records which published source it came from. See
-routemap/engine/data/README.md for how to add a carrier.
+routemap_engine/data/README.md for how to add a carrier.
 
 ORDER AND THE PHYSICS BOUND
 ---------------------------
 Hoiho first, then this, then the IP database. A site-code location is a claim
-like any other and goes through the same RTT check in routemap/engine/geo.py: if
+like any other and goes through the same RTT check in routemap_engine/geo.py: if
 the hostname says Hong Kong but the round trip cannot reach Hong Kong, the hop
 is not placed in Hong Kong.
 """
@@ -83,7 +83,7 @@ def use_data_file(path: pathlib.Path | str | None) -> pathlib.Path:
 
     The one piece of selectable state in the engine, and deliberately so: it
     picks which read-only table to load, once, at startup, so a table refreshed
-    with ``routemap sites update`` replaces the copy that shipped with the
+    with ``python -m routemap_engine.sitegen --out FILE`` replaces the copy that shipped with the
     release. A file that does not exist leaves the bundled table in use.
     """
     global _source, _table

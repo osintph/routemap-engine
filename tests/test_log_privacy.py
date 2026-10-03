@@ -8,7 +8,7 @@ Every such value in a log call goes through logsafe.tag() or is measured
 import pathlib
 import re
 
-ENGINE = pathlib.Path(__file__).resolve().parents[1] / "routemap" / "engine"
+ENGINE = pathlib.Path(__file__).resolve().parents[1] / "routemap_engine"
 
 USER_VALUES = ("hostname", "addr", "address", "target", "trace_text", "text",
                "origin", "city", "client_ip", "ip")

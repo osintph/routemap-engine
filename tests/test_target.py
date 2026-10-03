@@ -6,7 +6,7 @@ pastes into a shell. Here it is also a subprocess argument, so "-rf" and
 """
 import pytest
 
-from routemap.engine.target import InvalidTarget, validate_target
+from routemap_engine.target import InvalidTarget, validate_target
 
 
 @pytest.mark.parametrize("raw,expected", [

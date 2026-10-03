@@ -12,8 +12,8 @@ that block in, and the map then shows the packet detouring through it.
 
 Two defences, in this order:
 
-1. Ask the router's hostname first (``routemap/engine/hoiho.py``, then the
-   carrier site-code table in ``routemap/engine/sitecodes.py``). The carrier's
+1. Ask the router's hostname first (``routemap_engine/hoiho.py``, then the
+   carrier site-code table in ``routemap_engine/sitecodes.py``). The carrier's
    own naming scheme is better evidence than a registry entry.
 2. Check every candidate location against the speed of light. A location that
    cannot be reached and returned from inside the measured RTT is wrong, no
@@ -80,13 +80,13 @@ import dns.resolver
 import dns.reversename
 import httpx
 
-from routemap.engine import hoiho, sitecodes
-from routemap.engine.cache import Cache
-from routemap.engine.logsafe import tag
-from routemap.engine.netaddr import is_private_ip
-from routemap.engine.parse import Hop, is_routable_hostname
+from routemap_engine import hoiho, sitecodes
+from routemap_engine.cache import Cache
+from routemap_engine.logsafe import tag
+from routemap_engine.netaddr import is_private_ip
+from routemap_engine.parse import Hop, is_routable_hostname
 
-log = logging.getLogger("routemap.engine.geo")
+log = logging.getLogger("routemap_engine.geo")
 
 DEFAULT_USER_AGENT = hoiho.DEFAULT_USER_AGENT
 DEFAULT_HTTP_TIMEOUT = 10.0
@@ -105,6 +105,10 @@ SOURCE_SITE_CODE = sitecodes.SOURCE   # "site-code"
 SOURCE_IP_DB = "ip-db"
 SOURCE_LOCAL = "local"
 SOURCE_UNRESOLVED = "unresolved"
+
+# Set on a hop placed only to country level (the IP database had no city).
+# Absent on every other hop.
+PRECISION_COUNTRY = "country"
 
 RIPESTAT_GEO = "https://stat.ripe.net/data/maxmind-geo-lite/data.json"
 # Bounded fan-out: a 30-hop trace must not open 30 sockets to RIPEstat at once.
@@ -539,6 +543,11 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                     "place": _ip_place(record), "cc": record.get("cc"),
                     "distance_km": distance, "rtt_budget_km": budget,
                 })
+                if not record.get("city"):
+                    # The database knew the country and nothing finer: its
+                    # coordinates are the country's centroid, not a city. Said
+                    # so explicitly, so no renderer draws it like a city hop.
+                    entry["precision"] = PRECISION_COUNTRY
                 break
 
         # ---- nothing survived

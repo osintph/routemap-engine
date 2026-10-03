@@ -32,10 +32,10 @@ from typing import Callable
 
 import httpx
 
-from routemap.engine import geo
-from routemap.engine.logsafe import tag
+from routemap_engine import geo
+from routemap_engine.logsafe import tag
 
-log = logging.getLogger("routemap.engine.atlas")
+log = logging.getLogger("routemap_engine.atlas")
 
 BASE_URL = "https://atlas.ripe.net/api/v2"
 TRACEROUTE_CREDITS = 30
@@ -78,12 +78,14 @@ def to_trace_text(result: dict) -> str:
 
 class Atlas:
     def __init__(self, key: str, *, user_agent: str = geo.DEFAULT_USER_AGENT,
-                 base_url: str = BASE_URL):
+                 base_url: str = BASE_URL, description: str = "routemap-engine traceroute"):
         if not key or not key.strip():
             raise AtlasUnavailable("auth", "No RIPE Atlas API key is set. Add one in Settings.")
         self.key = key.strip()
         self.user_agent = user_agent
         self.base_url = base_url.rstrip("/")
+        # Published by RIPE with the measurement, so it names the tool, not the user.
+        self.description = description
 
     def _client(self, authenticated: bool = True) -> httpx.AsyncClient:
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
@@ -147,7 +149,7 @@ class Atlas:
         body = {
             "definitions": [{
                 "type": "traceroute", "af": af, "target": target,
-                "description": "routemap desktop", "protocol": "ICMP",
+                "description": self.description, "protocol": "ICMP",
                 "resolve_on_probe": True, "paris": 0, "first_hop": 1, "max_hops": 30,
                 "packets": 3,
             }],

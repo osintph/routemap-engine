@@ -52,12 +52,12 @@ requests", which is the whole reason this batches: one trace is one request.
 
 CACHING, AND WHAT IS IN THE CACHE
 ---------------------------------
-Router hostnames only, in whatever :mod:`routemap.engine.cache` object the
+Router hostnames only, in whatever :mod:`routemap_engine.cache` object the
 caller passes (30 days by default). A hostname is cached whether or not it
 matched, because the misses are the common case and re-asking for them every
 time would be most of the traffic sent to CAIDA for no new information.
 
-Nothing else from a trace is stored. ``routemap.engine.parse.is_routable_hostname``
+Nothing else from a trace is stored. ``routemap_engine.parse.is_routable_hostname``
 is the gate: a private hop, a LAN label like ``_gateway`` or ``router``,
 and anything address-shaped never reaches this module, so it is neither sent to
 CAIDA nor written to the cache.
@@ -76,12 +76,12 @@ import math
 
 import httpx
 
-from routemap.__about__ import REPO_URL, USER_AGENT_PRODUCT
-from routemap.engine.cache import Cache, NullCache
-from routemap.engine.logsafe import tag
-from routemap.engine.parse import is_routable_hostname
+from routemap_engine.__about__ import REPO_URL, USER_AGENT_PRODUCT
+from routemap_engine.cache import Cache, NullCache
+from routemap_engine.logsafe import tag
+from routemap_engine.parse import is_routable_hostname
 
-log = logging.getLogger("routemap.engine.hoiho")
+log = logging.getLogger("routemap_engine.hoiho")
 
 DEFAULT_BASE_URL = "https://api.hoiho.caida.org"
 DEFAULT_TIMEOUT_SECONDS = 12.0

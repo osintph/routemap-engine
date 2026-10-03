@@ -39,7 +39,7 @@ WHAT A PARSER DOES NOT DO
 -------------------------
 No geolocation, no judgement, no network access: a Hop is what the text said,
 including hops that answered from several addresses and hops that answered not
-at all. Everything downstream (routemap/engine/geo.py) reads Hop and never the
+at all. Everything downstream (routemap_engine/geo.py) reads Hop and never the
 raw text, so adding a fifth format means adding a parser here and nothing else.
 """
 from __future__ import annotations
