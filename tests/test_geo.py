@@ -399,3 +399,25 @@ def test_the_ip_database_placement_names_the_address_it_used():
     assert entry["source"] == geo.SOURCE_IP_DB
     assert entry["address"] == "64.86.26.38", (
         "the hop is shown with an address that did not produce its location")
+
+
+def test_ripestat_calls_carry_sourceapp_only_when_given(monkeypatch):
+    import asyncio
+    seen = []
+
+    class R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"data": {"located_resources": []}}
+
+    async def capture(self, url, **kwargs):
+        seen.append(kwargs.get("params"))
+        return R()
+
+    monkeypatch.setattr("httpx.AsyncClient.get", capture)
+    asyncio.run(geo.ip_geolocate(["62.115.1.1"]))
+    asyncio.run(geo.ip_geolocate(["62.115.1.2"], sourceapp="routemap-desktop"))
+    assert seen == [{"resource": "62.115.1.1"},
+                    {"resource": "62.115.1.2", "sourceapp": "routemap-desktop"}]

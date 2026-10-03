@@ -2,6 +2,15 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.2.1] - 2026-10-03
+
+### Added
+
+- `sourceapp` on every RIPEstat call (`geo.ip_geolocate`, `whereami.locate_me`,
+  `whereami.public_ip`, `whereami.asn_of`): RIPEstat asks regular users to
+  identify their application with it. Optional; nothing changes when it is not
+  passed.
+
 ## [0.2.0] - 2026-10-03
 
 First release as its own package, `routemap-engine` (import `routemap_engine`),

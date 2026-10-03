@@ -32,9 +32,10 @@ class OriginUnknown(RuntimeError):
 
 
 async def public_ip(*, user_agent: str = geo.DEFAULT_USER_AGENT,
-                    timeout: float = geo.DEFAULT_HTTP_TIMEOUT) -> str:
+                    timeout: float = geo.DEFAULT_HTTP_TIMEOUT, sourceapp: str | None = None) -> str:
     async with httpx.AsyncClient() as client:
         response = await client.get(WHATS_MY_IP, timeout=timeout,
+                                    params={"sourceapp": sourceapp} if sourceapp else None,
                                     headers={"User-Agent": user_agent})
     response.raise_for_status()
     addr = str(((response.json() or {}).get("data") or {}).get("ip") or "").strip()
@@ -43,17 +44,18 @@ async def public_ip(*, user_agent: str = geo.DEFAULT_USER_AGENT,
 
 
 async def locate_me(*, user_agent: str = geo.DEFAULT_USER_AGENT,
-                    timeout: float = geo.DEFAULT_HTTP_TIMEOUT) -> dict:
+                    timeout: float = geo.DEFAULT_HTTP_TIMEOUT, sourceapp: str | None = None) -> dict:
     """{"ip", "lat", "lon", "cc", "label"} for this machine, city level.
 
     Coordinates are rounded to one decimal (about 10 km), which is all the
     physics bound needs and no more than the city label already says.
     """
     try:
-        addr = await public_ip(user_agent=user_agent, timeout=timeout)
+        addr = await public_ip(user_agent=user_agent, timeout=timeout, sourceapp=sourceapp)
     except Exception as exc:
         raise OriginUnknown(f"could not find this machine's public address: {exc}") from exc
-    records = await geo.ip_geolocate([addr], user_agent=user_agent, timeout=timeout)
+    records = await geo.ip_geolocate([addr], user_agent=user_agent, timeout=timeout,
+                                     sourceapp=sourceapp)
     record = records.get(addr)
     if not record:
         log.info("event=origin_lookup ip=%s result=none", tag(addr))
@@ -66,11 +68,11 @@ async def locate_me(*, user_agent: str = geo.DEFAULT_USER_AGENT,
 
 
 async def asn_of(addr: str, *, user_agent: str = geo.DEFAULT_USER_AGENT,
-                 timeout: float = geo.DEFAULT_HTTP_TIMEOUT) -> int | None:
+                 timeout: float = geo.DEFAULT_HTTP_TIMEOUT, sourceapp: str | None = None) -> int | None:
     """The origin AS of *addr*, for picking a RIPE Atlas probe on the same network."""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(NETWORK_INFO, params={"resource": addr},
+            response = await client.get(NETWORK_INFO, params=geo._ripestat_params(addr, sourceapp),
                                         timeout=timeout, headers={"User-Agent": user_agent})
         asns = ((response.json() or {}).get("data") or {}).get("asns") or []
         return int(asns[0]) if asns else None

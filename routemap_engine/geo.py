@@ -230,7 +230,8 @@ def classify_address(addr: str) -> str:
 # ------------------------------------------------------------- the IP source ---
 
 async def _ip_geolocate_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore,
-                            addr: str, user_agent: str, timeout: float) -> dict | None:
+                            addr: str, user_agent: str, timeout: float,
+                            sourceapp: str | None = None) -> dict | None:
     """One address through RIPEstat's MaxMind GeoLite view.
 
     RIPEstat is free and keyless, and it is the upstream FalconEye's IP
@@ -240,7 +241,7 @@ async def _ip_geolocate_one(client: httpx.AsyncClient, semaphore: asyncio.Semaph
     async with semaphore:
         try:
             response = await client.get(
-                RIPESTAT_GEO, params={"resource": addr}, timeout=timeout,
+                RIPESTAT_GEO, params=_ripestat_params(addr, sourceapp), timeout=timeout,
                 headers={"User-Agent": user_agent})
         except Exception as exc:
             log.warning("ip geolocation exception for %s: %s", tag(addr), exc)
@@ -277,8 +278,17 @@ async def _ip_geolocate_one(client: httpx.AsyncClient, semaphore: asyncio.Semaph
             "cc": first.get("country") or None}
 
 
+def _ripestat_params(resource: str, sourceapp: str | None) -> dict:
+    """RIPEstat asks regular users to identify themselves with ``sourceapp``."""
+    params = {"resource": resource}
+    if sourceapp:
+        params["sourceapp"] = sourceapp
+    return params
+
+
 async def ip_geolocate(addresses: list[str], *, user_agent: str = DEFAULT_USER_AGENT,
-                       timeout: float = DEFAULT_HTTP_TIMEOUT) -> dict:
+                       timeout: float = DEFAULT_HTTP_TIMEOUT,
+                       sourceapp: str | None = None) -> dict:
     """Geolocate several public addresses at once. Never raises."""
     wanted = [a for a in dict.fromkeys(addresses) if a]
     if not wanted:
@@ -286,7 +296,7 @@ async def ip_geolocate(addresses: list[str], *, user_agent: str = DEFAULT_USER_A
     semaphore = asyncio.Semaphore(IP_DB_CONCURRENCY)
     async with httpx.AsyncClient() as client:
         results = await asyncio.gather(
-            *[_ip_geolocate_one(client, semaphore, addr, user_agent, timeout)
+            *[_ip_geolocate_one(client, semaphore, addr, user_agent, timeout, sourceapp)
               for addr in wanted],
             return_exceptions=True)
     out = {}
