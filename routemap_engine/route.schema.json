@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/osintph/routemap/blob/main/routemap/engine/route.schema.json",
+  "title": "Route",
+  "description": "One analysed traceroute: Route.to_dict(). Also the body of FalconEye's POST /api/routemap/analyze.",
+  "type": "object",
+  "required": ["parser", "parser_label", "target", "warnings", "hoiho_ruleset_date", "origin", "hops"],
+  "additionalProperties": false,
+  "properties": {
+    "parser": {"enum": ["tracert", "traceroute", "mtr", "hops"]},
+    "parser_label": {"type": "string"},
+    "target": {"type": ["string", "null"], "description": "What the trace banner said was traced, if anything."},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "hoiho_ruleset_date": {"type": ["string", "null"], "description": "CAIDA Hoiho ruleset date, when Hoiho answered from the network."},
+    "origin": {"$ref": "#/$defs/origin"},
+    "hops": {"type": "array", "items": {"$ref": "#/$defs/hop"}}
+  },
+  "$defs": {
+    "coord_lat": {"type": ["number", "null"], "minimum": -90, "maximum": 90},
+    "coord_lon": {"type": ["number", "null"], "minimum": -180, "maximum": 180},
+    "origin": {
+      "type": "object",
+      "required": ["lat", "lon", "label", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {"$ref": "#/$defs/coord_lat"},
+        "lon": {"$ref": "#/$defs/coord_lon"},
+        "label": {"type": ["string", "null"]},
+        "source": {"enum": ["supplied", "first-hop", "none"]}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["source", "accepted"],
+      "properties": {
+        "source": {"enum": ["hoiho", "site-code", "ip-db"]},
+        "accepted": {"type": "boolean"},
+        "hostname": {"type": "string"},
+        "address": {"type": "string"},
+        "place": {"type": ["string", "null"]},
+        "lat": {"$ref": "#/$defs/coord_lat"},
+        "lon": {"$ref": "#/$defs/coord_lon"},
+        "distance_km": {"type": ["number", "null"]},
+        "rtt_budget_km": {"type": ["number", "null"]},
+        "why": {"type": "string"},
+        "match_strs": {"type": "array", "items": {"type": "string"}},
+        "match_meanings": {"type": "array", "items": {"type": "string"}},
+        "carrier": {"type": "string"},
+        "code": {"type": "string"},
+        "source_ref": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "hop": {
+      "type": "object",
+      "required": ["hop", "addresses", "address", "hostnames", "hostname", "min_rtt_ms",
+                   "avg_rtt_ms", "sent", "lost", "loss_pct", "codes", "source", "lat", "lon",
+                   "place", "cc", "distance_km", "rtt_budget_km", "annotations", "reason",
+                   "candidates"],
+      "additionalProperties": false,
+      "properties": {
+        "hop": {"type": "integer", "minimum": 1, "maximum": 255},
+        "addresses": {"type": "array", "items": {"type": "string"}},
+        "address": {"type": ["string", "null"], "description": "The address that produced the placement, else the first."},
+        "hostnames": {"type": "array", "items": {"type": "string"}},
+        "hostname": {"type": ["string", "null"], "description": "The hostname that produced the placement, else the first."},
+        "min_rtt_ms": {"type": ["number", "null"]},
+        "avg_rtt_ms": {"type": ["number", "null"]},
+        "sent": {"type": "integer", "minimum": 0},
+        "lost": {"type": "integer", "minimum": 0},
+        "loss_pct": {"type": ["number", "null"]},
+        "codes": {"type": "array", "items": {"type": "string"}},
+        "source": {"enum": ["hoiho", "site-code", "ip-db", "local", "unresolved"]},
+        "lat": {"$ref": "#/$defs/coord_lat"},
+        "lon": {"$ref": "#/$defs/coord_lon"},
+        "place": {"type": ["string", "null"]},
+        "cc": {"type": ["string", "null"]},
+        "distance_km": {"type": ["number", "null"]},
+        "rtt_budget_km": {"type": ["number", "null"]},
+        "annotations": {"type": "array", "items": {"enum": [
+          "local / ISP internal",
+          "location impossible for RTT",
+          "likely asymmetric return path",
+          "ICMP rate limiting, not real loss",
+          "destination or path does not answer ICMP"]}},
+        "annotation_details": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": ["string", "null"], "description": "Why the hop is unplaced, or how a local hop was handled."},
+        "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+        "match_strs": {"type": "array", "items": {"type": "string"}},
+        "match_meanings": {"type": "array", "items": {"type": "string"}},
+        "carrier": {"type": "string"},
+        "site_code": {"type": "string"},
+        "source_ref": {"type": "string"}
+      }
+    }
+  }
+}
