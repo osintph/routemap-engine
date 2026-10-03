@@ -75,12 +75,36 @@ _lock = threading.Lock()
 _table: dict | None = None
 
 
+_source: pathlib.Path = DATA_FILE
+
+
+def use_data_file(path: pathlib.Path | str | None) -> pathlib.Path:
+    """Read the table from *path* instead of the bundled copy (None: bundled).
+
+    The one piece of selectable state in the engine, and deliberately so: it
+    picks which read-only table to load, once, at startup, so a table refreshed
+    with ``routemap sites update`` replaces the copy that shipped with the
+    release. A file that does not exist leaves the bundled table in use.
+    """
+    global _source, _table
+    chosen = pathlib.Path(path) if path else DATA_FILE
+    if not chosen.exists():
+        chosen = DATA_FILE
+    with _lock:
+        _source, _table = chosen, None
+    return chosen
+
+
+def data_file() -> pathlib.Path:
+    return _source
+
+
 def _load() -> dict:
     """(carrier, code) -> {city, cc, lat, lon, source_ref}."""
     table: dict = {}
-    if not DATA_FILE.exists():  # pragma: no cover - the file ships with the repo
+    if not _source.exists():  # pragma: no cover - the file ships with the repo
         return table
-    with DATA_FILE.open(encoding="utf-8") as handle:
+    with _source.open(encoding="utf-8") as handle:
         for line in handle:
             if line.startswith("#") or not line.strip():
                 continue
