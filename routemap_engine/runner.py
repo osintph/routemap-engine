@@ -53,12 +53,16 @@ from typing import Callable
 
 from routemap_engine.target import validate_target
 
+TOOL_ICMP = "icmp"            # the engine's own prober (routemap_engine.probe)
 TOOL_TRACERT = "tracert"
 TOOL_TRACEROUTE = "traceroute"
 TOOL_MTR = "mtr"
-TOOLS = (TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR)
+TOOLS = (TOOL_ICMP, TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR)
 
+# The same probing on every platform: 30 hops, three probes per hop, one
+# second per reply. The built-in prober is first everywhere it can run.
 DEFAULT_FLAGS = {
+    TOOL_ICMP: ["-m", "30", "-q", "3", "-w", "1"],
     TOOL_TRACERT: ["-h", "30", "-w", "1000"],
     TOOL_TRACEROUTE: ["-m", "30", "-q", "3", "-w", "1"],
     TOOL_MTR: ["--report-wide", "--show-ips", "-c", "3", "-m", "30"],
@@ -66,6 +70,7 @@ DEFAULT_FLAGS = {
 
 # Flags that switch a tool to a probe type needing raw sockets, per tool.
 PRIVILEGED_FLAGS = {
+    TOOL_ICMP: {},
     TOOL_TRACEROUTE: {"-I": "ICMP probes", "-T": "TCP probes", "--icmp": "ICMP probes",
                       "--tcp": "TCP probes"},
     TOOL_TRACERT: {},
@@ -117,9 +122,18 @@ def _mtr_usable() -> bool:
     return True
 
 
+def icmp_status() -> tuple[bool, str]:
+    """Whether the built-in ICMP prober can run here, and why not."""
+    from routemap_engine import probe
+    return probe.available()
+
+
 def available_tools() -> dict[str, str]:
-    """Installed, usable tools for this platform: name -> executable path."""
+    """Installed, usable tools for this platform: name -> executable path
+    ("built-in" for the engine's own ICMP prober)."""
     found = {}
+    if icmp_status()[0]:
+        found[TOOL_ICMP] = "built-in"
     plat = _platform()
     candidates = [TOOL_TRACERT] if plat == "windows" else [TOOL_TRACEROUTE, TOOL_MTR]
     for name in candidates:
@@ -168,7 +182,7 @@ def pick_tool(requested: str = "auto") -> tuple[str, str]:
                     "Choose traceroute in Settings.")
             raise TraceToolMissing(f"{requested} is not installed. {install_hint()}")
         return requested, tools[requested]
-    for name in (TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR):
+    for name in (TOOL_ICMP, TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR):
         if name in tools:
             return name, tools[name]
     raise TraceToolMissing(install_hint())
@@ -218,6 +232,13 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     options = options or TraceOptions()
     tool, executable = pick_tool(options.tool)
     argv = build_argv(tool, executable, target, options.flags)
+    if tool == TOOL_ICMP:
+        result = _run_builtin(argv, options)
+        if result is not None:
+            return result
+        # IPv6 target: the system tool for this platform.
+        tool, executable = pick_tool(TOOL_TRACERT if _platform() == "windows" else TOOL_TRACEROUTE)
+        argv = build_argv(tool, executable, target, None)
 
     env = dict(os.environ)
     env.update(options.env)
@@ -270,3 +291,31 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     return TraceResult(text=text, tool=tool, argv=argv, returncode=returncode,
                        cancelled=cancelled, timed_out=timed_out,
                        seconds=round(time.monotonic() - started, 2))
+
+
+def _flag(flags: list[str], name: str, default: float) -> float:
+    try:
+        return float(flags[flags.index(name) + 1])
+    except (ValueError, IndexError):
+        return default
+
+
+def _run_builtin(argv: list[str], options: TraceOptions) -> TraceResult | None:
+    """The built-in ICMP prober with the -m/-q/-w values in *argv*. None for an
+    IPv6 target, which the system tool handles."""
+    import ipaddress
+    import socket
+
+    from routemap_engine import probe
+    target, flags = argv[-1], argv[1:-1]
+    try:
+        ipaddress.IPv4Address(socket.gethostbyname(target))
+    except (OSError, ValueError):
+        return None
+    started = time.monotonic()
+    text, cancelled, timed_out = probe.trace(
+        target, max_hops=int(_flag(flags, "-m", probe.MAX_HOPS)), queries=int(_flag(flags, "-q", probe.QUERIES)),
+        wait=_flag(flags, "-w", probe.WAIT_SECONDS), on_line=options.on_line, cancel=options.cancel,
+        deadline=started + options.timeout)
+    return TraceResult(text=text, tool=TOOL_ICMP, argv=argv, returncode=0, cancelled=cancelled,
+                       timed_out=timed_out, seconds=round(time.monotonic() - started, 2))
