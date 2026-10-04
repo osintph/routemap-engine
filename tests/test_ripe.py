@@ -156,3 +156,31 @@ def test_ris_agreement_skips_the_access_network_ris_never_sees():
     out = ripe.ris_agreement([64500, 1299, 12306], paths)
     assert out["agree"] == 2 and out["differs_at"] is None and out["compared_from"] == 1299
     assert ripe.ris_agreement([64500, 64501], paths)["agree"] == 0
+
+
+
+def test_a_failure_records_why_and_the_slow_endpoints_retry():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(503)
+    c = ripe.RipeStat(user_agent=UA, sourceapp="x", transport=httpx.MockTransport(handler))
+    assert asyncio.run(c.ris_paths("193.99.144.0/24")) is None
+    assert c.errors["looking-glass"] == "RIPEstat answered HTTP 503"
+    assert len(calls) == 2, "looking-glass is retried once"
+    assert asyncio.run(c.as_overview(1299)) is None and len(calls) == 3, "a fast endpoint is not retried"
+
+
+def test_a_timeout_says_how_long_it_waited():
+    async def slow(request):
+        await asyncio.sleep(5)
+        return httpx.Response(200, json={})
+    c = ripe.RipeStat(user_agent=UA, sourceapp="x", transport=httpx.MockTransport(slow), timeout=0.05)
+    old = dict(ripe.SLOW)
+    ripe.SLOW.clear()
+    try:
+        assert asyncio.run(c.as_overview(1299)) is None
+    finally:
+        ripe.SLOW.update(old)
+    assert c.errors["as-overview"].startswith("RIPEstat did not answer within")

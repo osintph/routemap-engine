@@ -30,6 +30,11 @@ log = logging.getLogger(__name__)
 
 BASE = "https://stat.ripe.net/data/{}/data.json"
 DEFAULT_TIMEOUT = 8.0
+# The heavy endpoints scan route-collector data and are routinely slower than
+# the rest; at 8 s they failed often enough to leave a panel empty on one
+# machine and filled on another (4 Oct 2026). They get longer and one retry.
+SLOW = {"looking-glass": 20.0, "bgp-updates": 20.0, "routing-status": 15.0}
+RETRIES = {"looking-glass": 1, "bgp-updates": 1, "routing-status": 1}
 MAX_CONCURRENT = 4
 MIN_INTERVAL_S = 0.15           # between request starts, across the client
 
@@ -54,6 +59,9 @@ class RipeStat:
         self._lock = asyncio.Lock()
         self._last = 0.0
         self._now = now
+        # endpoint -> why the last call failed ("timed out after 20 s", "HTTP 503").
+        # Shown in the UI so a missing panel always says why.
+        self.errors: dict[str, str] = {}
 
     # ---------------------------------------------------------------- plumbing ---
     def _key(self, endpoint: str, params: dict) -> str:
@@ -81,20 +89,36 @@ class RipeStat:
         if hit is not None:
             return hit
         query = {**params, "sourceapp": self.sourceapp}
-        try:
-            async with self._sem:
-                await self._pace()
-                async with httpx.AsyncClient(transport=self._transport, timeout=self.timeout,
-                                             headers={"User-Agent": self.user_agent}) as client:
-                    response = await asyncio.wait_for(
-                        client.get(BASE.format(endpoint), params=query), timeout=self.timeout + 1)
-            response.raise_for_status()
-            data = response.json().get("data")
-        except Exception as exc:  # noqa: BLE001 - any failure is "unavailable"
-            log.warning("event=routemap_ripestat_failed endpoint=%s resource=%s error=%s",
-                        endpoint, tag(str(params.get("resource", ""))), type(exc).__name__)
+        limit = max(self.timeout, SLOW.get(endpoint, self.timeout))
+        data = None
+        for attempt in range(1 + RETRIES.get(endpoint, 0)):
+            try:
+                async with self._sem:
+                    await self._pace()
+                    async with httpx.AsyncClient(transport=self._transport, timeout=limit,
+                                                 headers={"User-Agent": self.user_agent}) as client:
+                        response = await asyncio.wait_for(
+                            client.get(BASE.format(endpoint), params=query), timeout=limit + 1)
+                response.raise_for_status()
+                data = response.json().get("data")
+                self.errors.pop(endpoint, None)
+                break
+            except asyncio.TimeoutError:
+                self.errors[endpoint] = f"RIPEstat did not answer within {limit:.0f} s"
+            except httpx.HTTPStatusError as exc:
+                self.errors[endpoint] = f"RIPEstat answered HTTP {exc.response.status_code}"
+            except httpx.HTTPError as exc:
+                self.errors[endpoint] = f"RIPEstat could not be reached ({type(exc).__name__})"
+            except Exception as exc:  # noqa: BLE001 - any failure is "unavailable"
+                self.errors[endpoint] = f"RIPEstat's answer could not be read ({type(exc).__name__})"
+            log.warning("event=routemap_ripestat_failed endpoint=%s resource=%s attempt=%d error=%s",
+                        endpoint, tag(str(params.get("resource", ""))), attempt + 1, self.errors[endpoint])
+        if data is None and endpoint not in self.errors:
+            self.errors[endpoint] = "RIPEstat returned no data"
+        if data is None:
             return None
         if not isinstance(data, dict):
+            self.errors[endpoint] = "RIPEstat's answer was not in the expected shape"
             return None
         if self.cache is not None:
             try:

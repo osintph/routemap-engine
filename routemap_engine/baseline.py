@@ -43,6 +43,7 @@ class Baseline:
                  transport: httpx.AsyncBaseTransport | None = None, now=time.time):
         self.user_agent, self.cache, self.timeout = user_agent, cache, timeout
         self._transport, self._now = transport, now
+        self.error: str | None = None      # why the last typical() returned None
 
     async def _get(self, client, path, **params):
         r = await asyncio.wait_for(client.get(f"{BASE}{path}", params=params), timeout=self.timeout)
@@ -76,7 +77,8 @@ class Baseline:
 
     async def typical(self, origin: tuple[float, float], origin_cc: str,
                       dest: tuple[float, float], dest_cc: str) -> dict | None:
-        """{"ms", "src", "dst", "msm"} or None when Atlas cannot say."""
+        """{"ms", "src", "dst", "msm"} or None when Atlas cannot say (``error`` says why)."""
+        self.error = None
         try:
             async with httpx.AsyncClient(transport=self._transport, timeout=self.timeout,
                                          headers={"User-Agent": self.user_agent}) as client:
@@ -84,6 +86,8 @@ class Baseline:
                 dst_list = await self._anchors(client, dest_cc)
                 src, dst = self.nearest(src_list, *origin), self.nearest(dst_list, *dest)
                 if not src or not dst or src["id"] == dst["id"]:
+                    self.error = ("RIPE Atlas has no anchor in " + (origin_cc if not src else dest_cc)
+                                  if not src or not dst else "both ends are nearest the same RIPE Atlas anchor")
                     return None
                 key = f"atlas-baseline:{src['id']}:{dst['id']}"
                 if self.cache is not None:
@@ -95,11 +99,13 @@ class Baseline:
                 mesh = [m for m in found.get("results") or []
                         if m.get("target") == dst["fqdn"] and "Mesh" in (m.get("description") or "")]
                 if not mesh:
+                    self.error = "RIPE Atlas lists no anchor mesh measurement to that anchor"
                     return None
                 msm = mesh[0]["id"]
                 latest = await self._get(client, f"/measurements/{msm}/latest/", probe_ids=src["probe"])
                 rtts = [r.get("min") for r in latest or [] if isinstance(r.get("min"), (int, float)) and r["min"] > 0]
                 if not rtts:
+                    self.error = "the anchor mesh has no recent result between these anchors"
                     return None
                 value = {"ms": round(min(rtts), 1), "msm": msm,
                          "src": {"fqdn": src["fqdn"], "city": src["city"]},
@@ -107,9 +113,14 @@ class Baseline:
                 if self.cache is not None:
                     self.cache.set(key, {"t": self._now(), "value": value})
                 return value
+        except asyncio.TimeoutError:
+            self.error = f"RIPE Atlas did not answer within {self.timeout:.0f} s"
+        except httpx.HTTPStatusError as exc:
+            self.error = f"RIPE Atlas answered HTTP {exc.response.status_code}"
         except Exception as exc:  # noqa: BLE001 - "unavailable", never a failed trace
-            log.warning("event=routemap_atlas_baseline_failed error=%s", type(exc).__name__)
-            return None
+            self.error = f"RIPE Atlas could not be reached ({type(exc).__name__})"
+        log.warning("event=routemap_atlas_baseline_failed error=%s", self.error)
+        return None
 
 
 def delta_text(baseline: dict | None, measured_ms: float | None, origin_label: str, dest_label: str) -> str | None:
