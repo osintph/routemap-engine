@@ -65,7 +65,7 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ### Unchanged
 - `analyse`, `resolve` and the route schema behave as in 0.3.0 apart from the
-  neighbour-check and DB-IP name changes above.
+  new parser value `icmp` and the neighbour-check and DB-IP name changes above.
 
 ## [0.3.0] - 2026-10-04
 
