@@ -30,6 +30,12 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - A trace from the built-in prober is labelled "Built-in ICMP prober"
   (parser `icmp`; the route schema gains that value) on every platform,
   instead of "Unix traceroute".
+- The live view (`ProgressiveTrace.snapshot`) names the built-in prober from
+  the trace header before the first hop has parsed, instead of falling back
+  to "Unix traceroute" until it does.
+- The per-platform probe test (a real trace with the built-in prober on
+  Windows, macOS and Linux runners) expects the parser name `icmp`; it still
+  asserted `traceroute` and failed on all three although the traces succeeded.
 - `ripe.ris_agreement` says where the disagreeing RIS paths leave the
   trace's path (`diverge`: where they join it, through which AS, how many),
   also when some paths agree; `differs_at` was only set when none did.
