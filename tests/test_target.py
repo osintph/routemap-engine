@@ -13,7 +13,7 @@ from routemap_engine.target import InvalidTarget, validate_target
     ("example.com", "example.com"),
     ("WWW.Example.COM", "www.example.com"),
     ("a-b.example.co.uk", "a-b.example.co.uk"),
-    ("122.2.187.146.static.pldt.net", "122.2.187.146.static.pldt.net"),
+    ("edge-46.isp.example.net", "edge-46.isp.example.net"),
     ("1.1.1.1", "1.1.1.1"),
     ("2001:db8::1", "2001:db8::1"),
     ("  heise.de  ", "heise.de"),

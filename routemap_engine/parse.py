@@ -29,7 +29,7 @@ lines it recognised, and the winner is the one that recognised the most. A
 header match only breaks a tie.
 
 The one genuine ambiguity is tracert versus traceroute, because
-"1  1 ms  1 ms  1 ms  192.168.1.1" is a valid-looking body for both readings.
+"1  1 ms  1 ms  1 ms  192.0.2.2" is a valid-looking body for both readings.
 It is resolved structurally rather than by guessing: a traceroute hop body
 always *begins* with an address, so :func:`_parse_traceroute` refuses a body
 whose first token is a timing. That is a property of the format, not a
@@ -213,7 +213,7 @@ def _dedupe_hops(hops: list[Hop]) -> list[Hop]:
 #   Tracing route to google.com [142.250.185.78]
 #   over a maximum of 30 hops:
 #
-#     1     1 ms     1 ms     1 ms  192.168.1.1
+#     1     1 ms     1 ms     1 ms  192.0.2.2
 #     2     *        *        *     Request timed out.
 #     4    15 ms    14 ms    15 ms  host.example.net [203.0.113.1]
 #     5    <1 ms     2 ms    <1 ms  10.0.0.1
@@ -296,8 +296,8 @@ def _parse_tracert(lines: list[str]) -> tuple[list[Hop], int, str | None, bool]:
 #
 #    traceroute to 1.1.1.1 (1.1.1.1), 12 hops max, 40 byte packets
 #     1  router (192.0.2.1)  10.821 ms *  3.741 ms
-#     4  122.2.187.142.static.pldt.net (122.2.187.142)  8.323 ms
-#        122.2.187.146.static.pldt.net (122.2.187.146)  8.015 ms
+#     4  edge-42.isp.example.net (203.0.113.42)  8.323 ms
+#        edge-46.isp.example.net (203.0.113.46)  8.015 ms
 #     8  * * *
 #     9  10.0.0.1 (10.0.0.1)  20.1 ms !H
 
@@ -307,7 +307,7 @@ _TRACEROUTE_HOP = re.compile(r"^\s*(\d{1,3})\s+(.*\S)\s*$")
 # An indented line continues the previous hop: an ECMP hop that answered from
 # more than one address. No lookahead for a leading digit, because a
 # continuation's first token very often starts with one
-# ("122.2.187.146.static.pldt.net"); what makes a line a hop line is
+# ("edge-46.isp.example.net"); what makes a line a hop line is
 # _TRACEROUTE_HOP matching, and that is tried first.
 _TRACEROUTE_CONT = re.compile(r"^\s{2,}(\S.*\S|\S)\s*$")
 

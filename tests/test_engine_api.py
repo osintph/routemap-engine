@@ -101,7 +101,7 @@ def test_no_origin_anchors_on_the_first_located_hop_and_says_so():
 
 
 def test_a_hop_list_is_accepted_as_well_as_text():
-    hops = [Hop(hop=1, addresses=["192.168.1.1"], rtts_ms=[1.0], sent=3),
+    hops = [Hop(hop=1, addresses=["192.0.2.2"], rtts_ms=[1.0], sent=3),
             Hop(hop=2, addresses=["62.115.112.222"],
                 hostnames=["sng-b6-link.ip.twelve99.net"], rtts_ms=[58.0], sent=3)]
     route = analyse_sync(hops, MANILA, sources=OFFLINE)
