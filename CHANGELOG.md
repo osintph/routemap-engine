@@ -2,7 +2,11 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
-## [0.3.1] - 2026-10-04
+## [0.4.0] - 2026-10-05
+
+A minor release, not a patch: `ripe.hourly_bins` can return None for an hour,
+`diff.diff_routes` gains `not_reached`, and the route schema gains the parser
+value `icmp`. (Prepared as 0.3.1, which was never published.)
 
 ### Added
 - `probe`: the engine's own ICMP traceroute, the same on Windows, macOS and

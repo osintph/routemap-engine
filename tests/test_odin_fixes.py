@@ -1,4 +1,4 @@
-"""0.3.1 fixes from the ODIN test (4 Oct 2026), each for the class of bug."""
+"""Fixes from the ODIN test (4 Oct 2026), released in 0.4.0, each for the class of bug."""
 import asyncio
 import ctypes
 import datetime as dt
