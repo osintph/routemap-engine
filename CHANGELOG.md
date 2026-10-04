@@ -2,6 +2,15 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.2.2] - 2026-10-04
+
+### Changed
+
+- Comments and examples no longer quote the maintainer's home network: the
+  router name, LAN and carrier-NAT addresses and the ISP's first hops are
+  documentation addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
+  with generic names. No code changes; behaviour is identical to 0.2.1.
+
 ## [0.2.1] - 2026-10-03
 
 ### Added
