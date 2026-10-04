@@ -182,6 +182,29 @@ class Atlas:
         raise AtlasUnavailable("failed", f"RIPE Atlas refused the measurement "
                                          f"(HTTP {response.status_code}). {detail}".strip())
 
+    async def history(self, target: str, limit: int = 5) -> list[dict]:
+        """The user's own earlier traceroute measurements to *target*, newest
+        first, as [{"msm", "when", "probe", "text"}]: a baseline for path diff
+        that spends no credits. Only the target is sent (with the key), which
+        RIPE already holds for these measurements."""
+        out: list[dict] = []
+        try:
+            async with self._client() as client:
+                r = await asyncio.wait_for(client.get("/measurements/my/", params={
+                    "target": target, "type": "traceroute", "sort": "-start_time",
+                    "page_size": limit}), timeout=20.0)
+                if r.status_code != 200:
+                    return []
+                for m in (r.json().get("results") or [])[:limit]:
+                    res = await asyncio.wait_for(client.get(f"/measurements/{m['id']}/results/"), timeout=20.0)
+                    rows = res.json() if res.status_code == 200 else []
+                    if rows:
+                        out.append({"msm": m["id"], "when": m.get("start_time"), "probe": rows[0].get("prb_id"),
+                                    "text": to_trace_text(rows[0])})
+        except Exception as exc:  # noqa: BLE001 - no history is not an error
+            log.warning("event=routemap_atlas_history_failed error=%s", type(exc).__name__)
+        return out
+
     async def wait(self, measurement_id: int, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                    on_wait: Callable[[float], None] | None = None) -> str:
         """Poll until the measurement has a result; return it as trace text."""

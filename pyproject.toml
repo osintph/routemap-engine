@@ -23,7 +23,9 @@ classifiers = [
 dependencies = ["httpx>=0.27", "dnspython>=2.4"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "jsonschema>=4.20"]
+# DB-IP Lite City and ASN files (MaxMind DB format) for the offline tier.
+offline = ["maxminddb>=2.5"]
+dev = ["pytest>=8", "jsonschema>=4.20", "maxminddb>=2.5"]
 
 [project.urls]
 Homepage = "https://github.com/osintph/routemap-engine"

@@ -29,9 +29,11 @@ async def _hoiho(hostnames):
 
 async def _ipdb(addresses):
     # Some city-level answers and one country-only answer, like the real database.
+    # The country-only one sits near its San Jose neighbours: an answer across
+    # an ocean from both, at the same RTT, is rejected by the neighbour check.
     out = {}
     for a in addresses:
-        out[a] = ({"lat": 47.6, "lon": 14.1, "city": None, "cc": "AT"} if a.endswith((".146", ".38", ".3")) else
+        out[a] = ({"lat": 36.8, "lon": -119.4, "city": None, "cc": "US"} if a.endswith((".146", ".38", ".3")) else
                   {"lat": 1.29, "lon": 103.85, "city": "Singapore", "cc": "SG"})
     return out
 
@@ -101,5 +103,5 @@ def test_an_ecmp_continuation_line_replaces_the_hop_with_both_routers():
 def test_a_country_only_answer_is_marked_as_such():
     route, _ = _progressive((FIXTURES / "amazon_traceroute.txt").read_text())
     country = [h for h in route.hops if h.get("precision") == "country"]
-    assert country and all(h["source"] == "ip-db" and h["place"] == "AT" for h in country)
+    assert country and all(h["source"] == "ip-db" and h["place"] == "US" for h in country)
     assert all("precision" not in h for h in route.hops if h["source"] != "ip-db")

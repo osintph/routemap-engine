@@ -1,0 +1,2970 @@
+{
+ "anchors-PH": {
+  "results": [
+   {
+    "id": 2543,
+    "fqdn": "ph-ceb-as135132.anchors.atlas.ripe.net",
+    "city": "Cebu",
+    "probe": 6887,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      123.9073363,
+      10.31752
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4350,
+    "fqdn": "ph-ceb-as141013.anchors.atlas.ripe.net",
+    "city": "Cebu",
+    "probe": 7620,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      123.9084917,
+      10.3311724
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4351,
+    "fqdn": "ph-dvo-as141013.anchors.atlas.ripe.net",
+    "city": "Davao",
+    "probe": 7621,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      125.5332774,
+      7.0453216
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2879,
+    "fqdn": "ph-mkc-as3491.anchors.atlas.ripe.net",
+    "city": "Makati City",
+    "probe": 7032,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      121.0212171,
+      14.5568322
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4349,
+    "fqdn": "ph-mnl-as141013.anchors.atlas.ripe.net",
+    "city": "Manila",
+    "probe": 7622,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      121.0655956,
+      14.2724713
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1807,
+    "fqdn": "ph-nju-as23944.anchors.atlas.ripe.net",
+    "city": "San Juan",
+    "probe": 7241,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      121.037043,
+      14.599577
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4450,
+    "fqdn": "ph-pis-as147178.anchors.atlas.ripe.net",
+    "city": "Davao City",
+    "probe": 7633,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      125.6197031,
+      7.0988875
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4443,
+    "fqdn": "ph-pis-as150000.anchors.atlas.ripe.net",
+    "city": "general santos city",
+    "probe": 7611,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      125.1928634,
+      6.1432733
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 523,
+    "fqdn": "ph-qzt-as9821.anchors.atlas.ripe.net",
+    "city": "Quezon City",
+    "probe": 6132,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      121.066461,
+      14.647576
+     ]
+    },
+    "is_disabled": true
+   }
+  ]
+ },
+ "anchors-DE": {
+  "results": [
+   {
+    "id": 1080,
+    "fqdn": "de-57x-as200567.anchors.atlas.ripe.net",
+    "city": "Tangstedt",
+    "probe": 6305,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.07094,
+      53.74242
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2826,
+    "fqdn": "de-57x-as200567.anchors.atlas.ripe.net",
+    "city": "Tangstedt",
+    "probe": 7022,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0839485,
+      53.736687
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2813,
+    "fqdn": "de-aah-as34953.anchors.atlas.ripe.net",
+    "city": "Aachen",
+    "probe": 7006,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.1344538,
+      50.7832007
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3041,
+    "fqdn": "de-bau-as47295.anchors.atlas.ripe.net",
+    "city": "Bautzen",
+    "probe": 7096,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      14.3460768,
+      51.1939616
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3976,
+    "fqdn": "de-beh-as30766.anchors.atlas.ripe.net",
+    "city": "Bensheim",
+    "probe": 7435,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6177116,
+      49.680336
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 500,
+    "fqdn": "de-ber-as20647.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6117,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.404954,
+      52.5200066
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4218,
+    "fqdn": "de-ber-as211573.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6934,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.404954,
+      52.5200066
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4216,
+    "fqdn": "de-ber-as215120.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 7521,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.616997,
+      52.5136252
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 17,
+    "fqdn": "de-ber-as25291.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6017,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.4,
+      52.5
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 952,
+    "fqdn": "de-ber-as25291.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6246,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.36945,
+      52.50192
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2132,
+    "fqdn": "de-ber-as29670.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6842,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.2380091,
+      52.5385355
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3042,
+    "fqdn": "de-ber-as3320-client.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 7075,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.4228576,
+      52.5457514
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2517,
+    "fqdn": "de-ber-as39138.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6894,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.3692652,
+      52.5020517
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3255,
+    "fqdn": "de-ber-as50030.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 7156,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.3692652,
+      52.5020517
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4845,
+    "fqdn": "de-ber-as5405.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 7818,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.2376192,
+      52.5375121
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 718,
+    "fqdn": "de-ber-as62310.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6183,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.404954,
+      52.5200066
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2141,
+    "fqdn": "de-ber-as62310.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6751,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.4285599,
+      52.4529565
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1222,
+    "fqdn": "de-ber-as6724.anchors.atlas.ripe.net",
+    "city": "Berlin",
+    "probe": 6331,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.3224154,
+      52.523444
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4503,
+    "fqdn": "de-bre-as30742.anchors.atlas.ripe.net",
+    "city": "Bremen",
+    "probe": 7695,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.8474568,
+      53.1085745
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1712,
+    "fqdn": "de-bre-as50629.anchors.atlas.ripe.net",
+    "city": "Bremen",
+    "probe": 6531,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.76863,
+      53.08495
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 817,
+    "fqdn": "de-bwe-as680.anchors.atlas.ripe.net",
+    "city": "Braunschweig",
+    "probe": 6202,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.5417063,
+      52.2764787
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 416,
+    "fqdn": "de-cal-as39702.anchors.atlas.ripe.net",
+    "city": "Calw",
+    "probe": 6073,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7472439,
+      48.7122107
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2306,
+    "fqdn": "de-cal-as39702.anchors.atlas.ripe.net",
+    "city": "Calw",
+    "probe": 7034,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7400598,
+      48.7139654
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2324,
+    "fqdn": "de-cgn-as61157.anchors.atlas.ripe.net",
+    "city": "K\u00f6ln",
+    "probe": 6814,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.058659,
+      50.9123781
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4139,
+    "fqdn": "de-dar-as12897.anchors.atlas.ripe.net",
+    "city": "Darmstadt",
+    "probe": 7489,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6514146,
+      49.8851613
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 714,
+    "fqdn": "de-dar-as8365.anchors.atlas.ripe.net",
+    "city": "Darmstadt",
+    "probe": 6186,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.63576,
+      49.87252
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 752,
+    "fqdn": "de-drs-as42699.anchors.atlas.ripe.net",
+    "city": "Dresden",
+    "probe": 6180,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.73229,
+      51.03883
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2336,
+    "fqdn": "de-drs-as42699.anchors.atlas.ripe.net",
+    "city": "Dresden",
+    "probe": 6824,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.7347646,
+      51.0377067
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4592,
+    "fqdn": "de-drs-as680-client.anchors.atlas.ripe.net",
+    "city": "Dresden,",
+    "probe": 7702,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      13.7229697,
+      51.0254635
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1722,
+    "fqdn": "de-dtm-as15763.anchors.atlas.ripe.net",
+    "city": "Deutschland",
+    "probe": 6556,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.52804,
+      51.50437
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2968,
+    "fqdn": "de-dtm-as39138-02.anchors.atlas.ripe.net",
+    "city": "Dortmund",
+    "probe": 7069,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.3741684,
+      51.5188705
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1299,
+    "fqdn": "de-dtm-as39138.anchors.atlas.ripe.net",
+    "city": "Dortmund",
+    "probe": 6357,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.4879214,
+      51.5209565
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1172,
+    "fqdn": "de-dtm-as8391.anchors.atlas.ripe.net",
+    "city": "Dortmund",
+    "probe": 6502,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.40332,
+      51.49087
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3907,
+    "fqdn": "de-dtm-as8391.anchors.atlas.ripe.net",
+    "city": "Dortmund",
+    "probe": 7412,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.4036793,
+      51.490672
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 746,
+    "fqdn": "de-dus-as12676.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 6213,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.7734556,
+      51.2277411
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2973,
+    "fqdn": "de-dus-as204035.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 7068,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8174322,
+      51.2670946
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4268,
+    "fqdn": "de-dus-as20676.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 7567,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.86728,
+      51.18819
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4342,
+    "fqdn": "de-dus-as207160.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 7583,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8274176,
+      51.209707
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4528,
+    "fqdn": "de-dus-as207252.anchors.atlas.ripe.net",
+    "city": "Duesseldorf",
+    "probe": 7699,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.817379,
+      51.267046
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2323,
+    "fqdn": "de-dus-as207306.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 6816,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8175201,
+      51.2673008
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1656,
+    "fqdn": "de-dus-as209915.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 6535,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8071504,
+      51.2196318
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3705,
+    "fqdn": "de-dus-as216084.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 7312,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.866741,
+      51.1878699
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2651,
+    "fqdn": "de-dus-as24961.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 7035,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8175201,
+      51.2673008
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2821,
+    "fqdn": "de-dus-as34936.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 7004,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8175201,
+      51.2673008
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1300,
+    "fqdn": "de-dus-as39138.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 6368,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.867753,
+      51.188264
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3357,
+    "fqdn": "de-dus-as41047.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 7268,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8174322,
+      51.2670946
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1629,
+    "fqdn": "de-dus-as48821.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 6507,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8677694,
+      51.1882705
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4568,
+    "fqdn": "de-dus-as52112.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf, Germany",
+    "probe": 7681,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.817379,
+      51.267046
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1844,
+    "fqdn": "de-dus-as58057.anchors.atlas.ripe.net",
+    "city": "Dusseldorf",
+    "probe": 6589,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8175201,
+      51.2673008
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3149,
+    "fqdn": "de-dus-as59645.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 7117,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.8175201,
+      51.2673008
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2259,
+    "fqdn": "de-dus-as61157.anchors.atlas.ripe.net",
+    "city": "D\u00fcsseldorf",
+    "probe": 6802,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      6.870125,
+      51.186031
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1104,
+    "fqdn": "de-edn-as42184.anchors.atlas.ripe.net",
+    "city": "Emsdetten",
+    "probe": 6302,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.55537,
+      52.15731
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 689,
+    "fqdn": "de-erl-as680.anchors.atlas.ripe.net",
+    "city": "Erlangen",
+    "probe": 6166,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.02943756,
+      49.57230843
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2303,
+    "fqdn": "de-erl-as680-client.anchors.atlas.ripe.net",
+    "city": "Erlangen",
+    "probe": 6838,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.02773,
+      49.57384
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1597,
+    "fqdn": "de-esp-as15817.anchors.atlas.ripe.net",
+    "city": "Espelkamp",
+    "probe": 6550,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.62412,
+      52.38469
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 424,
+    "fqdn": "de-ett-as202040.anchors.atlas.ripe.net",
+    "city": "Ettlingen",
+    "probe": 6078,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.390881,
+      48.952508
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2270,
+    "fqdn": "de-ett-as202040.anchors.atlas.ripe.net",
+    "city": "Ettlingen",
+    "probe": 6813,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.3909827,
+      48.9525729
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1478,
+    "fqdn": "de-fad-as49697.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6416,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6011068,
+      50.1281415
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1403,
+    "fqdn": "de-ffo-as55002.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6439,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.5875079,
+      50.0965986
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2113,
+    "fqdn": "de-fks-as208751.anchors.atlas.ripe.net",
+    "city": "Falkenstein",
+    "probe": 6744,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.3347186,
+      50.4788395
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1738,
+    "fqdn": "de-fks-as209844.anchors.atlas.ripe.net",
+    "city": "Falkenstein",
+    "probe": 6537,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.3453564,
+      51.731509
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2356,
+    "fqdn": "de-fks-as213392.anchors.atlas.ripe.net",
+    "city": "Falkenstein",
+    "probe": 6869,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.3348451,
+      50.4787549
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2483,
+    "fqdn": "de-fra-as12008.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6979,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7357106,
+      50.1199637
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2894,
+    "fqdn": "de-fra-as12306.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7036,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6284112,
+      50.096109
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4650,
+    "fqdn": "de-fra-as1299-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7724,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7350876,
+      50.1199094
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2736,
+    "fqdn": "de-fra-as14061.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6967,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73561,
+      50.12007
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2008,
+    "fqdn": "de-fra-as15169.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6708,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1546,
+    "fqdn": "de-fra-as16509.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6463,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4177,
+    "fqdn": "de-fra-as16509-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7503,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6014355,
+      50.1281919
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4651,
+    "fqdn": "de-fra-as174-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7725,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7350876,
+      50.1199094
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3436,
+    "fqdn": "de-fra-as197071-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7218,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7447171,
+      50.1223758
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3579,
+    "fqdn": "de-fra-as197477.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7273,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7447171,
+      50.1223758
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3553,
+    "fqdn": "de-fra-as200187.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7265,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6300397,
+      50.0969757
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1716,
+    "fqdn": "de-fra-as200462.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6534,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1294,
+    "fqdn": "de-fra-as202196.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6457,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73561,
+      50.12007
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4454,
+    "fqdn": "de-fra-as20292.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7654,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7364149,
+      50.1190854
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1154,
+    "fqdn": "de-fra-as203329.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6313,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6011068,
+      50.1281415
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1525,
+    "fqdn": "de-fra-as20473.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6561,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73561,
+      50.12007
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4711,
+    "fqdn": "de-fra-as205520.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7762,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.735177,
+      50.1200922
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1383,
+    "fqdn": "de-fra-as205614.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main, Germany",
+    "probe": 6440,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6317098,
+      50.09958541
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1479,
+    "fqdn": "de-fra-as206479.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6433,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7429433,
+      50.139593
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4000,
+    "fqdn": "de-fra-as20676.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7413,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.637215,
+      50.0993176
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3369,
+    "fqdn": "de-fra-as208722.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7184,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3235,
+    "fqdn": "de-fra-as208976.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7148,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.5817123,
+      50.1266837
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4304,
+    "fqdn": "de-fra-as208976.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7554,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.5816696,
+      50.126708
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2226,
+    "fqdn": "de-fra-as209844.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6791,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6319545,
+      50.0988483
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4066,
+    "fqdn": "de-fra-as210752.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7437,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6300397,
+      50.0969757
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4666,
+    "fqdn": "de-fra-as21336-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7730,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7117545,
+      50.1108299
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4079,
+    "fqdn": "de-fra-as214138.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7491,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6564115,
+      50.0027455
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4402,
+    "fqdn": "de-fra-as214895.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7618,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6014355,
+      50.1281919
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4636,
+    "fqdn": "de-fra-as215760.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7718,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.602534,
+      50.1292292
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3342,
+    "fqdn": "de-fra-as24840-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7196,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6319545,
+      50.0988483
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 646,
+    "fqdn": "de-fra-as28753.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6152,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3212,
+    "fqdn": "de-fra-as29423.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7141,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6010195,
+      50.1281293
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1963,
+    "fqdn": "de-fra-as3320.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6724,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1076,
+    "fqdn": "de-fra-as33808.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6293,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.63226,
+      50.09867
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1407,
+    "fqdn": "de-fra-as34549.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6413,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7431943,
+      50.1398082
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2234,
+    "fqdn": "de-fra-as34854.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6795,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.743032,
+      50.139583
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4649,
+    "fqdn": "de-fra-as34854.anchors.atlas.ripe.net",
+    "city": "Frankfurt, Germany",
+    "probe": 7723,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.5816696,
+      50.126708
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2218,
+    "fqdn": "de-fra-as3491.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6784,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6954089,
+      50.1137156
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1037,
+    "fqdn": "de-fra-as39063.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6294,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73699,
+      50.12046
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2330,
+    "fqdn": "de-fra-as39063.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7169,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73589,
+      50.11995
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1890,
+    "fqdn": "de-fra-as39533.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6620,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6319545,
+      50.0988483
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3708,
+    "fqdn": "de-fra-as398485.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7317,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6439447,
+      50.0971376
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1858,
+    "fqdn": "de-fra-as42263.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6600,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6014355,
+      50.1281919
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 555,
+    "fqdn": "de-fra-as43996.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6141,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4404,
+    "fqdn": "de-fra-as44656.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7685,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6320043,
+      50.0988499
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3793,
+    "fqdn": "de-fra-as47272.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7343,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3830,
+    "fqdn": "de-fra-as47272.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7357,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6821267,
+      50.1109221
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4488,
+    "fqdn": "de-fra-as47536.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7635,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6014355,
+      50.1281919
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3222,
+    "fqdn": "de-fra-as47777-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7176,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7439117,
+      50.1572924
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1587,
+    "fqdn": "de-fra-as47950.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6481,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73760638,
+      50.12234792
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 472,
+    "fqdn": "de-fra-as48918.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6105,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73469,
+      50.11964
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 502,
+    "fqdn": "de-fra-as49024.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6134,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.587634,
+      50.098195
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 270,
+    "fqdn": "de-fra-as5580.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6023,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73527,
+      50.12003
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2877,
+    "fqdn": "de-fra-as56381.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7097,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7433378,
+      50.1396084
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1865,
+    "fqdn": "de-fra-as58057.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6601,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7429433,
+      50.139593
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3645,
+    "fqdn": "de-fra-as60767.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7402,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7397858,
+      50.122427
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1485,
+    "fqdn": "de-fra-as61438.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6527,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73609,
+      50.11935
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3924,
+    "fqdn": "de-fra-as62371.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 7403,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7760843,
+      50.0956362
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2729,
+    "fqdn": "de-fra-as63949-client.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6940,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6441701,
+      50.0968833
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3731,
+    "fqdn": "de-fra-as64289.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 7321,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.6014355,
+      50.1281919
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2214,
+    "fqdn": "de-fra-as64473.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6778,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.7429433,
+      50.139593
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 342,
+    "fqdn": "de-fra-as8763.anchors.atlas.ripe.net",
+    "city": "Frankfurt",
+    "probe": 6060,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.663789,
+      50.107145
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2423,
+    "fqdn": "de-fra-as8763.anchors.atlas.ripe.net",
+    "city": "Frankfurt am Main",
+    "probe": 6857,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.73518,
+      50.11893
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1814,
+    "fqdn": "de-ful-as8319.anchors.atlas.ripe.net",
+    "city": "Fulda",
+    "probe": 6679,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.6808449,
+      50.5558095
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2148,
+    "fqdn": "de-fwn-as553-client.anchors.atlas.ripe.net",
+    "city": "Furtwangen",
+    "probe": 6761,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.20947,
+      48.04788
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 596,
+    "fqdn": "de-gaa-as56357.anchors.atlas.ripe.net",
+    "city": "Garching",
+    "probe": 6159,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6697764,
+      48.2622985
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2291,
+    "fqdn": "de-gbm-as56357.anchors.atlas.ripe.net",
+    "city": "Garching bei M\u00fcnchen",
+    "probe": 6812,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6679877,
+      48.2625435
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2515,
+    "fqdn": "de-goe-as39835.anchors.atlas.ripe.net",
+    "city": "G\u00f6ttingen",
+    "probe": 6922,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.930054,
+      51.5452146
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1001,
+    "fqdn": "de-gud-as206549.anchors.atlas.ripe.net",
+    "city": "Gr\u00fcnwald",
+    "probe": 6272,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5565,
+      48.06396
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3930,
+    "fqdn": "de-gud-as206549.anchors.atlas.ripe.net",
+    "city": "Gr\u00fcnwald",
+    "probe": 7478,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5566161,
+      48.0640854
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 14,
+    "fqdn": "de-ham-as12731.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6014,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.048331,
+      53.550004
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 912,
+    "fqdn": "de-ham-as12731.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6239,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0483046,
+      53.5497959
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4092,
+    "fqdn": "de-ham-as12731.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 7511,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0482593,
+      53.5497378
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2726,
+    "fqdn": "de-ham-as199938.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6941,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.038666,
+      53.5510053
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 598,
+    "fqdn": "de-ham-as201709.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6135,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.03897,
+      53.55098
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 836,
+    "fqdn": "de-ham-as35258.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6210,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.02623367,
+      53.61373772
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2380,
+    "fqdn": "de-ham-as35258.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6880,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0254496,
+      53.6119436
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2256,
+    "fqdn": "de-ham-as61157.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6807,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0008768,
+      53.4761252
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4743,
+    "fqdn": "de-ham-as62336-client.anchors.atlas.ripe.net",
+    "city": "Hamburg, Germany",
+    "probe": 7771,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0040683,
+      53.5476463
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1821,
+    "fqdn": "de-ham-as680.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6579,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.9865943,
+      53.5696044
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1619,
+    "fqdn": "de-ham-as8893.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 6504,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0480076,
+      53.549318
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3992,
+    "fqdn": "de-ham-as8893.anchors.atlas.ripe.net",
+    "city": "Hamburg",
+    "probe": 7501,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.0482593,
+      53.5497378
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2209,
+    "fqdn": "de-has-as44973.anchors.atlas.ripe.net",
+    "city": "Hassfurt",
+    "probe": 6789,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.5249999,
+      50.02954
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3234,
+    "fqdn": "de-hrd-as8879.anchors.atlas.ripe.net",
+    "city": "Herford",
+    "probe": 7151,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.647389,
+      52.1209666
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1503,
+    "fqdn": "de-kae-as205390.anchors.atlas.ripe.net",
+    "city": "Karlsruhe",
+    "probe": 6442,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.4744258,
+      49.0169097
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1498,
+    "fqdn": "de-kae-as34878.anchors.atlas.ripe.net",
+    "city": "Karlsruhe",
+    "probe": 6432,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.4082049,
+      49.0122422
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 931,
+    "fqdn": "de-kae-as8560.anchors.atlas.ripe.net",
+    "city": "Karlsruhe",
+    "probe": 6250,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.3857334,
+      48.999727
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 284,
+    "fqdn": "de-kel-as13101.anchors.atlas.ripe.net",
+    "city": "Kiel",
+    "probe": 6052,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.10807902,
+      54.36624689
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2794,
+    "fqdn": "de-kel-as13101.anchors.atlas.ripe.net",
+    "city": "Kiel",
+    "probe": 7012,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.1227652,
+      54.3232927
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3233,
+    "fqdn": "de-kln-as59790-client.anchors.atlas.ripe.net",
+    "city": "Kirchlinteln",
+    "probe": 7162,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.2840142,
+      52.9008482
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3659,
+    "fqdn": "de-kln-as59790-client.anchors.atlas.ripe.net",
+    "city": "Kirchlinteln",
+    "probe": 7297,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.2840142,
+      52.9008482
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3905,
+    "fqdn": "de-kln-as59790-client.anchors.atlas.ripe.net",
+    "city": "Kirchlinteln",
+    "probe": 7472,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.3078102,
+      52.9149024
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3140,
+    "fqdn": "de-lbc-as29505.anchors.atlas.ripe.net",
+    "city": "L\u00fcbeck",
+    "probe": 7118,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.6842713,
+      53.8688989
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 3660,
+    "fqdn": "de-lbc-as29505.anchors.atlas.ripe.net",
+    "city": "Luebeck",
+    "probe": 7304,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.6842713,
+      53.8688989
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3299,
+    "fqdn": "de-lej-as200297.anchors.atlas.ripe.net",
+    "city": "Leipzig",
+    "probe": 7279,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.4740086,
+      51.3729432
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4517,
+    "fqdn": "de-lej-as200297.anchors.atlas.ripe.net",
+    "city": "LEY",
+    "probe": 7690,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.4728065,
+      51.3726855
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1509,
+    "fqdn": "de-lej-as35065.anchors.atlas.ripe.net",
+    "city": "Leipzig",
+    "probe": 6447,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.3988051,
+      51.3954727
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2062,
+    "fqdn": "de-lml-as16276.anchors.atlas.ripe.net",
+    "city": "Limburg an der Lahn",
+    "probe": 6715,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.0795783,
+      50.3986005
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3393,
+    "fqdn": "de-lwr-as9022-client.anchors.atlas.ripe.net",
+    "city": "Ludwigshafen am Rhein",
+    "probe": 7208,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.4211817,
+      49.4864026
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1242,
+    "fqdn": "de-mag-as680.anchors.atlas.ripe.net",
+    "city": "Magdeburg",
+    "probe": 6346,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6441991,
+      52.1402053
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1217,
+    "fqdn": "de-mai-as2857.anchors.atlas.ripe.net",
+    "city": "Mainz",
+    "probe": 6336,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.2426214,
+      49.9920506
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1360,
+    "fqdn": "de-mdt-as15945.anchors.atlas.ripe.net",
+    "city": "Mutterstadt",
+    "probe": 6387,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.35915723,
+      49.42631922
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4776,
+    "fqdn": "de-mdt-as56368.anchors.atlas.ripe.net",
+    "city": "Mutterstadt",
+    "probe": 7787,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.3593959,
+      49.4263731
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1361,
+    "fqdn": "de-mhg-as21473.anchors.atlas.ripe.net",
+    "city": "Mannheim",
+    "probe": 6385,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.52663632,
+      49.50707096
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2572,
+    "fqdn": "de-msr-as680.anchors.atlas.ripe.net",
+    "city": "M\u00fcnster",
+    "probe": 6908,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.5963725,
+      51.9684549
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2953,
+    "fqdn": "de-muc-as15456.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 7195,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5926979,
+      48.1954766
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2717,
+    "fqdn": "de-muc-as212567.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 6939,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5927295,
+      48.1957367
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 4279,
+    "fqdn": "de-muc-as213615.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 7546,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6120728,
+      48.1250891
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 989,
+    "fqdn": "de-muc-as35003.anchors.atlas.ripe.net",
+    "city": "Munchen",
+    "probe": 6275,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6018052,
+      48.1180903
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2490,
+    "fqdn": "de-muc-as48328.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 6900,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.600206,
+      48.104691
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 273,
+    "fqdn": "de-muc-as5539.anchors.atlas.ripe.net",
+    "city": "Munchen",
+    "probe": 6020,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.576754,
+      48.1367203
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1430,
+    "fqdn": "de-muc-as5539.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 6396,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5266098,
+      48.1400465
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 546,
+    "fqdn": "de-muc-as8767.anchors.atlas.ripe.net",
+    "city": "M\u00fcnchen",
+    "probe": 6123,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5945581,
+      48.1835419
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2143,
+    "fqdn": "de-muc-as8767.anchors.atlas.ripe.net",
+    "city": "Munich",
+    "probe": 6750,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.5874255,
+      48.1864969
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 3249,
+    "fqdn": "de-mun-as12437.anchors.atlas.ripe.net",
+    "city": "M\u00fcnster",
+    "probe": 7152,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.6389448,
+      51.9555829
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1238,
+    "fqdn": "de-nib-as680.anchors.atlas.ripe.net",
+    "city": "Neubiberg",
+    "probe": 6372,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.6458808,
+      48.0792006
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2258,
+    "fqdn": "de-not-as61157.anchors.atlas.ripe.net",
+    "city": "Norderstedt",
+    "probe": 6806,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.9897651,
+      53.702647
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2799,
+    "fqdn": "de-nue-as15451.anchors.atlas.ripe.net",
+    "city": "N\u00fcrnberg",
+    "probe": 6999,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0766654,
+      49.4521018
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1864,
+    "fqdn": "de-nue-as197540.anchors.atlas.ripe.net",
+    "city": "N\u00fcrnberg",
+    "probe": 6799,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0766654,
+      49.4521018
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4518,
+    "fqdn": "de-nue-as197540-client.anchors.atlas.ripe.net",
+    "city": "N\u00fcrnberg",
+    "probe": 7688,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0139858,
+      49.4492505
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 409,
+    "fqdn": "de-nue-as33988.anchors.atlas.ripe.net",
+    "city": "Nuremberg",
+    "probe": 6081,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0226507,
+      49.4287056
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 668,
+    "fqdn": "de-nue-as60574.anchors.atlas.ripe.net",
+    "city": "N\u00fcrnberg",
+    "probe": 6171,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.07675,
+      49.45203
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 1785,
+    "fqdn": "de-off-as25220.anchors.atlas.ripe.net",
+    "city": "Offenbach",
+    "probe": 6558,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      8.74229,
+      50.1093
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1809,
+    "fqdn": "de-red-as60316.anchors.atlas.ripe.net",
+    "city": "Remscheid",
+    "probe": 6576,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.2269892,
+      51.1862032
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1820,
+    "fqdn": "de-rgm-as197540.anchors.atlas.ripe.net",
+    "city": "Nuremberg",
+    "probe": 6581,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0769976,
+      49.4519839
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1215,
+    "fqdn": "de-rgm-as24940.anchors.atlas.ripe.net",
+    "city": "Nuremberg",
+    "probe": 6332,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.0139777,
+      49.4492498
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1911,
+    "fqdn": "de-rgm-as24940-client.anchors.atlas.ripe.net",
+    "city": "Nuremberg",
+    "probe": 6693,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.014143,
+      49.4494116
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4516,
+    "fqdn": "de-rgm-as47526-client.anchors.atlas.ripe.net",
+    "city": "Nuremberg",
+    "probe": 7651,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      11.1771189,
+      49.3893804
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2341,
+    "fqdn": "de-rhe-as42184.anchors.atlas.ripe.net",
+    "city": "Rheine",
+    "probe": 6826,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.4401779,
+      52.3106815
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2397,
+    "fqdn": "de-scn-as680-client.anchors.atlas.ripe.net",
+    "city": "Saarbr\u00fccken",
+    "probe": 6858,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.040975,
+      49.2550284
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 2549,
+    "fqdn": "de-sle-as204989.anchors.atlas.ripe.net",
+    "city": "Spelle",
+    "probe": 7354,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.4777679,
+      52.3514109
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 1747,
+    "fqdn": "de-str-as12374.anchors.atlas.ripe.net",
+    "city": "Stuttgart",
+    "probe": 6548,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.1685734,
+      48.7076206
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 473,
+    "fqdn": "de-str-as48918.anchors.atlas.ripe.net",
+    "city": "Stuttgart",
+    "probe": 6108,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.12854,
+      48.72145
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 316,
+    "fqdn": "de-str-as553.anchors.atlas.ripe.net",
+    "city": "Stuttgart",
+    "probe": 6035,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.10360927,
+      48.74542013
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2024,
+    "fqdn": "de-str-as553.anchors.atlas.ripe.net",
+    "city": "Stuttgart",
+    "probe": 6683,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.1070098,
+      48.7457001
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 906,
+    "fqdn": "de-tua-as21413.anchors.atlas.ripe.net",
+    "city": "Taucha",
+    "probe": 6238,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      12.4814134,
+      51.3911887
+     ]
+    },
+    "is_disabled": true
+   },
+   {
+    "id": 2972,
+    "fqdn": "de-uwg-as12931.anchors.atlas.ripe.net",
+    "city": "Kempten",
+    "probe": 7054,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      10.3166624,
+      47.7561376
+     ]
+    },
+    "is_disabled": false
+   },
+   {
+    "id": 4693,
+    "fqdn": "de-vel-as207252.anchors.atlas.ripe.net",
+    "city": "Velbert, Germany",
+    "probe": 7750,
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.0678522,
+      51.3491484
+     ]
+    },
+    "is_disabled": false
+   }
+  ]
+ },
+ "measurements": {
+  "results": [
+   {
+    "id": 32379631,
+    "target": "de-fra-as12306.anchors.atlas.ripe.net",
+    "description": "Anchoring Mesh Measurement: Ping IPv4 for anchor de-fra-as12306.anchors.atlas.ripe.net",
+    "type": "ping"
+   },
+   {
+    "id": 32381518,
+    "target": "de-fra-as12306.anchors.atlas.ripe.net",
+    "description": "Anchoring Probes Measurement: Ping IPv4 for anchor de-fra-as12306.anchors.atlas.ripe.net",
+    "type": "ping"
+   }
+  ]
+ },
+ "latest": [
+  {
+   "prb_id": 7032,
+   "min": 184.534033,
+   "avg": 184.62295000000003,
+   "max": 184.788293,
+   "timestamp": 1791090315
+  }
+ ],
+ "expect": {
+  "src": "ph-mkc-as3491.anchors.atlas.ripe.net",
+  "dst": "de-fra-as12306.anchors.atlas.ripe.net",
+  "dest_coords": [
+   50.096109,
+   8.6284112
+  ],
+  "msm": 32379631
+ }
+}

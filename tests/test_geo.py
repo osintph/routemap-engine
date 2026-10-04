@@ -5,6 +5,8 @@ It has to reject what light cannot reach and, just as importantly, has to NOT
 reject a hop merely because its RTT is inflated, which is the normal condition
 of the internet. Both directions are tested.
 """
+import asyncio
+
 import pytest
 
 from routemap_engine import geo
@@ -421,3 +423,46 @@ def test_ripestat_calls_carry_sourceapp_only_when_given(monkeypatch):
     asyncio.run(geo.ip_geolocate(["62.115.1.2"], sourceapp="routemap-desktop"))
     assert seen == [{"resource": "62.115.1.1"},
                     {"resource": "62.115.1.2", "sourceapp": "routemap-desktop"}]
+
+
+# ------------------------------------------------- neighbour check (0.3.0) ---
+
+def _ip_db_placing(table):
+    async def ip_db(addresses):
+        return {a: dict(table[a], provider="dbip") for a in addresses if a in table}
+    return ip_db
+
+
+FRANKFURT = {"lat": 50.11, "lon": 8.68, "city": "Frankfurt", "cc": "DE"}
+CHICAGO = {"lat": 41.88, "lon": -87.63, "city": "Chicago", "cc": "US"}
+AMSTERDAM = {"lat": 52.37, "lon": 4.90, "city": "Amsterdam", "cc": "NL"}
+
+
+def _sandwich(middle, middle_rtt, prev_rtt=211.0, next_rtt=258.0):
+    """Three hops: database-placed, then *middle*, then database-placed again."""
+    from routemap_engine.parse import Hop
+    hops = []
+    for n, (addr, rtt) in enumerate([("62.115.132.229", prev_rtt), ("62.115.153.153", middle_rtt),
+                                     ("82.98.102.1", next_rtt)], start=10):
+        h = Hop(hop=n)
+        h.addresses.append(addr)
+        h.rtts_ms.append(rtt)
+        hops.append(h)
+    table = {"62.115.132.229": FRANKFURT, "62.115.153.153": middle, "82.98.102.1": FRANKFURT}
+    return asyncio.run(geo.resolve(hops, (14.5995, 120.9842), geo.Sources(ip_db=_ip_db_placing(table))))["hops"]
+
+
+@pytest.mark.parametrize("middle,rtt,kept", [
+    (CHICAGO, 257.0, False),     # the heise hop 12 case: 6,960 km detour, RTT rose 46 ms
+    (CHICAGO, 290.0, True),      # rose 79 ms: a detour that long is paid for
+    (AMSTERDAM, 212.0, True),    # 360 km away: not a detour at all
+])
+def test_a_database_placement_between_two_hops_in_one_area_must_pay_for_its_detour(middle, rtt, kept):
+    hops = _sandwich(middle, rtt)
+    mid = hops[1]
+    assert (mid["source"] == "ip-db") is kept
+    if not kept:
+        assert mid["lat"] is None and mid["annotations"] == [geo.ANNOT_RTT_IMPOSSIBLE]
+        assert "needs" in mid["reason"]
+        assert any(c["source"] == "ip-db" and not c["accepted"] for c in mid["candidates"])
+    assert hops[0]["source"] == hops[2]["source"] == "ip-db"

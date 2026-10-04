@@ -2,6 +2,43 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.3.0] - 2026-10-04
+
+### Added
+- `offline`: DB-IP Lite City and DB-IP Lite ASN readers (CC BY 4.0, "IP
+  Geolocation by DB-IP"), behind the optional `offline` extra (`maxminddb`).
+  The engine never downloads them; the caller passes the files.
+- `default_sources(offline_city=...)`: the City file answers first and the
+  online IP database is asked only for what it missed. Every IP database
+  placement now says which tier answered (`ip_provider`: `dbip` or
+  `ripestat`); the route schema gains that field.
+- `osint`: RTT step classification with caller-set thresholds (15 ms quiet,
+  60 ms hot by default), AS path, countries transited with sensitive and
+  country-only flags, and a "likely anycast" note.
+- `ripe`: one RIPEstat client (network info, RIR, RPKI, RIS paths,
+  visibility, BGP updates, AS overview, neighbours, abuse contacts) with
+  rate limiting, caching, `sourceapp`, a hard timeout per call, and None for
+  any failure; plus RIS agreement and the 48 hour update timeline.
+- `baseline`: typical latency between two countries from RIPE Atlas anchor
+  mesh measurements (public, no key, no credits); only country codes and the
+  anchor name are sent.
+- `atlas.Atlas.history`: the user's own earlier traceroutes to a target.
+- `diff`: compare two routes by place, not hop number, with a written summary;
+  a run that ends in silence is not reported as lost hops.
+- `ixp`: exchange point labelling, off and shipped without data until a
+  source the engine may redistribute exists.
+
+### Changed
+- Neighbour check: an IP database placement between two placed hops in one
+  area is rejected when its minimum RTT rose too little to pay for the
+  detour. Found comparing DB-IP with RIPEstat on the bundled traces: DB-IP
+  places heise's hop 12 in Chicago, between two Frankfurt hops, with an RTT
+  rise of 46 ms against the 70 ms the round trip needs. Hostname placements
+  are not checked this way. Runs in both `resolve` and the progressive path.
+
+### Unchanged
+- `analyse` and the existing route fields keep their meaning.
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed

@@ -144,7 +144,9 @@ class ProgressiveTrace:
         located = [self.placed[h.hop] for h in self.parsed.hops if h.hop in self.placed]
         for entry in located:
             entry.pop("annotation_details", None)
-        geo.annotate(located)
+        # The same two passes as geo.resolve, so a live trace ends where the
+        # one-shot analysis of its text ends.
+        geo.annotate(geo.neighbour_check(located))
         return Route(parser=self.parsed.parser,
                      parser_label=PARSER_LABELS.get(self.parsed.parser, self.parsed.parser),
                      target=self.parsed.target, warnings=list(self.parsed.warnings),

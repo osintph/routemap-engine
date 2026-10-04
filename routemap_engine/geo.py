@@ -538,10 +538,11 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                     continue
                 lat, lon = record["lat"], record["lon"]
                 allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms)
+                provider = record.get("provider") or "ripestat"
                 candidate = {"source": SOURCE_IP_DB, "address": addr,
                              "place": _ip_place(record), "lat": lat, "lon": lon,
                              "distance_km": distance, "rtt_budget_km": budget,
-                             "accepted": allowed}
+                             "accepted": allowed, "provider": provider}
                 if not allowed:
                     candidate["why"] = _reject_reason(distance, budget)
                     entry["candidates"].append(candidate)
@@ -552,6 +553,8 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                     "address": addr,
                     "place": _ip_place(record), "cc": record.get("cc"),
                     "distance_km": distance, "rtt_budget_km": budget,
+                    # Which tier answered: "ripestat" (online) or "dbip" (offline).
+                    "ip_provider": provider,
                 })
                 if not record.get("city"):
                     # The database knew the country and nothing finer: its
@@ -578,6 +581,66 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
 
 
 # ----------------------------------------------------------------- annotating ---
+
+# The neighbour check: two placed hops this close count as "the same area",
+# and a hop between them this far from both is a detour that has to be paid for
+# in RTT.
+NEIGHBOUR_SAME_AREA_KM = 500.0
+NEIGHBOUR_DETOUR_KM = 1500.0
+_PLACED_SOURCES = (SOURCE_HOIHO, SOURCE_SITE_CODE, SOURCE_IP_DB)
+
+
+def neighbour_check(located: list[dict]) -> list[dict]:
+    """Reject an IP database placement its neighbours rule out.
+
+    The origin bound in :func:`rtt_allows` asks only whether a place is
+    reachable from where the trace started. A database that answers with an
+    address's registered location can pass that and still be impossible in
+    context: heise's hop 12 sits between two Frankfurt hops, and DB-IP places
+    it in Chicago. Getting from Frankfurt to Chicago and back costs at least
+    ``distance / KM_PER_MS_ROUND_TRIP`` ms, so when the hop's minimum RTT rose
+    by less than that over the previous placed hop, and the next placed hop
+    is back in the same area, the detour did not happen.
+
+    Only IP database placements are checked: a hostname rule names the router
+    itself, and is stronger evidence than a neighbour's RTT.
+    """
+    def placed(e):
+        return e.get("source") in _PLACED_SOURCES and e.get("lat") is not None
+
+    for i, entry in enumerate(located):
+        if entry.get("source") != SOURCE_IP_DB or entry.get("min_rtt_ms") is None:
+            continue
+        prev = next((e for e in reversed(located[:i]) if placed(e) and e.get("min_rtt_ms") is not None), None)
+        nxt = next((e for e in located[i + 1:] if placed(e)), None)
+        if prev is None or nxt is None:
+            continue
+        if haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"]) > NEIGHBOUR_SAME_AREA_KM:
+            continue
+        away_prev = haversine_km(prev["lat"], prev["lon"], entry["lat"], entry["lon"])
+        away_next = haversine_km(nxt["lat"], nxt["lon"], entry["lat"], entry["lon"])
+        if min(away_prev, away_next) < NEIGHBOUR_DETOUR_KM:
+            continue
+        needed = away_prev / KM_PER_MS_ROUND_TRIP
+        rose = entry["min_rtt_ms"] - prev["min_rtt_ms"]
+        if rose >= needed:
+            continue
+        why = (f"{ANNOT_RTT_IMPOSSIBLE}: {away_prev:,.0f} km from hop {prev['hop']} "
+               f"({prev.get('place') or 'placed'}) and back again by hop {nxt['hop']}, "
+               f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms")
+        for cand in entry["candidates"]:
+            if cand.get("source") == SOURCE_IP_DB and cand.get("accepted"):
+                cand["accepted"] = False
+                cand["why"] = why
+        for key in ("lat", "lon", "place", "cc", "distance_km", "rtt_budget_km"):
+            entry[key] = None
+        for key in ("ip_provider", "precision"):
+            entry.pop(key, None)
+        entry["source"] = SOURCE_UNRESOLVED
+        entry["annotations"] = [ANNOT_RTT_IMPOSSIBLE]
+        entry["reason"] = why
+    return located
+
 
 def annotate(located: list[dict]) -> list[dict]:
     """Add the three read-this-correctly annotations, in place.
@@ -704,15 +767,25 @@ OFFLINE = Sources()
 def default_sources(*, user_agent: str = DEFAULT_USER_AGENT, cache: Cache | None = None,
                     use_hoiho: bool = True, use_ip_db: bool = True, use_ptr: bool = True,
                     hoiho_base_url: str = hoiho.DEFAULT_BASE_URL,
-                    http_timeout: float = DEFAULT_HTTP_TIMEOUT) -> Sources:
-    """The live sources, configured. Nothing is contacted until a resolve runs."""
+                    http_timeout: float = DEFAULT_HTTP_TIMEOUT,
+                    offline_city=None) -> Sources:
+    """The live sources, configured. Nothing is contacted until a resolve runs.
+
+    *offline_city* is an :class:`~routemap_engine.offline.OfflineCity` (or any
+    callable with the ``ip_db`` signature). When given, it answers first and
+    the online IP database is asked only for what it missed; with
+    ``use_ip_db=False`` it still answers, and nothing goes online.
+    """
+    from routemap_engine.offline import layered_ip_db
     client = hoiho.Hoiho(base_url=hoiho_base_url, user_agent=user_agent, cache=cache)
 
-    async def ip_db(addresses: list[str]) -> dict:
+    async def online_ip_db(addresses: list[str]) -> dict:
         return await ip_geolocate(addresses, user_agent=user_agent, timeout=http_timeout)
 
+    online = online_ip_db if use_ip_db else None
+    ip_db = layered_ip_db(offline_city, online) if (offline_city or online) else None
     return Sources(hoiho=client.lookup if use_hoiho else None,
-                   ip_db=ip_db if use_ip_db else None,
+                   ip_db=ip_db,
                    ptr=reverse_dns if use_ptr else None)
 
 
@@ -823,7 +896,7 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
     if not isinstance(ip_records, dict):
         ip_records = {}
 
-    located = annotate(locate_hops(hops, hoiho_records, ip_records, origin))
+    located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin)))
     return {"hops": located, "hoiho_ruleset_date": ruleset}
 
 
