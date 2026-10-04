@@ -122,3 +122,19 @@ def test_with_nothing_cached_the_date_is_asked_with_a_placeholder_only(monkeypat
     client.cache.set("ae1.fra10.example.net", dict(hoiho.UNMATCHED))     # an old cache entry, no date
     _, ruleset = asyncio.run(client.lookup(["ae1.fra10.example.net"]))
     assert ruleset == "2024-08" and sent == [hoiho.RULESET_PROBE]
+
+
+def test_every_view_of_a_built_in_trace_names_the_built_in_prober():
+    # The live view (before and after the first hop), the parse and the final
+    # route all name the prober the same way; none falls back to "traceroute".
+    from routemap_engine import geo
+    from routemap_engine.progressive import ProgressiveTrace
+    header = f"traceroute to 192.0.2.9 (192.0.2.9), 30 hops max, 40 byte packets, {probe.HEADER_MARK}"
+    trace = ProgressiveTrace(None, geo.Sources())
+    trace.feed(header)
+    assert trace.snapshot()["parser"] == "icmp"
+    assert trace.snapshot()["parser_label"] == "Built-in ICMP prober"
+    trace.feed(" 1  192.0.2.1  1.234 ms  1.101 ms  1.087 ms")
+    trace.feed(" 2  192.0.2.9  2.345 ms  2.210 ms  2.199 ms")
+    assert trace.snapshot()["parser"] == "icmp"
+    assert parse_trace(trace.text).parser == "icmp"

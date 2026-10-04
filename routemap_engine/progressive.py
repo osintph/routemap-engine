@@ -27,7 +27,7 @@ from typing import Callable
 
 from routemap_engine import geo
 from routemap_engine.model import Route, origin_block
-from routemap_engine.parse import PARSER_LABELS, Hop, TraceParseError, parse_trace
+from routemap_engine.parse import _ICMP_MARK, PARSER_LABELS, Hop, TraceParseError, parse_trace
 
 log = logging.getLogger("routemap_engine.progressive")
 
@@ -128,7 +128,9 @@ class ProgressiveTrace:
     def snapshot(self) -> dict:
         """The route so far, as a Route-shaped dict (hops in order)."""
         hops = [self.placed[n] for n in sorted(self.placed)]
-        parser = self.parsed.parser if self.parsed else "traceroute"
+        # Before the first hop parses, the header alone says which prober runs.
+        first = self.text.split("\n", 1)[0]
+        parser = self.parsed.parser if self.parsed else ("icmp" if _ICMP_MARK in first else "traceroute")
         return {"parser": parser, "parser_label": PARSER_LABELS.get(parser, parser),
                 "target": self.parsed.target if self.parsed else None,
                 "warnings": [], "hoiho_ruleset_date": getattr(self, "ruleset", None),

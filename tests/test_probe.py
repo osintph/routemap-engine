@@ -40,7 +40,7 @@ def test_a_real_trace_with_the_built_in_prober():
     text, cancelled, timed_out = probe.trace(target, max_hops=int(os.environ.get("ROUTEMAP_PROBE_HOPS", "30")))
     print(text)
     parsed = parse_trace(text)
-    assert parsed.parser == "traceroute" and parsed.hops and not cancelled and not timed_out
+    assert parsed.parser == "icmp" and parsed.hops and not cancelled and not timed_out
     expect = int(os.environ.get("ROUTEMAP_PROBE_MIN_HOPS", "1"))
     answered = [h for h in parsed.hops if h.addresses]
     assert len(answered) >= expect, text
