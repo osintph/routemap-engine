@@ -133,7 +133,7 @@ def available_tools() -> dict[str, str]:
     ("built-in" for the engine's own ICMP prober)."""
     found = {}
     if icmp_status()[0]:
-        found[TOOL_ICMP] = "built-in"
+        found[TOOL_ICMP] = TOOL_ICMP          # built in: argv[0] is a label, not a path
     plat = _platform()
     candidates = [TOOL_TRACERT] if plat == "windows" else [TOOL_TRACEROUTE, TOOL_MTR]
     for name in candidates:
