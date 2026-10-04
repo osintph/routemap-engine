@@ -92,7 +92,9 @@ def test_ris_agreement_counts_suffix_matches_and_names_the_first_divergence():
     paths = [[3333, 1299, 12306], [6939, 1299, 12306], [174, 3356, 12306]]
     assert ripe.ris_agreement([1299, 12306], paths)["agree"] == 2
     out = ripe.ris_agreement([4775, 6453, 12306], paths)
-    assert out["agree"] == 0 and out["differs_at"] == 4775 and out["origin_asns"] == [12306]
+    # 4775 leads and no RIS path carries it (an access network): the
+    # divergence is named at the transit, 6453, where BGP would not go.
+    assert out["agree"] == 0 and out["differs_at"] == 6453 and out["origin_asns"] == [12306]
     assert ripe.ris_agreement([], paths)["agree"] == 0
 
 
@@ -145,3 +147,12 @@ def test_baseline_picks_the_nearest_anchors_and_sends_no_coordinates():
 def test_baseline_is_none_when_atlas_fails():
     b = baseline.Baseline(user_agent=UA, transport=httpx.MockTransport(lambda r: httpx.Response(500)))
     assert asyncio.run(b.typical((14.6, 121.0), "PH", (50.1, 8.7), "DE")) is None
+
+
+def test_ris_agreement_skips_the_access_network_ris_never_sees():
+    """A real home trace starts in the ISP's AS (here 64500), which no RIS peer
+    path carries; it reported "differs after AS64500" for a path RIS agrees with."""
+    paths = [[3333, 1299, 12306], [6939, 1299, 12306]]
+    out = ripe.ris_agreement([64500, 1299, 12306], paths)
+    assert out["agree"] == 2 and out["differs_at"] is None and out["compared_from"] == 1299
+    assert ripe.ris_agreement([64500, 64501], paths)["agree"] == 0

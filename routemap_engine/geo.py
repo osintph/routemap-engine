@@ -608,11 +608,28 @@ def neighbour_check(located: list[dict]) -> list[dict]:
     def placed(e):
         return e.get("source") in _PLACED_SOURCES and e.get("lat") is not None
 
-    for i, entry in enumerate(located):
-        if entry.get("source") != SOURCE_IP_DB or entry.get("min_rtt_ms") is None:
+    # A detour can be one hop or a run of consecutive database placements at
+    # the same point (a router that answered twice, heise's hops 11 and 12 in
+    # "Chicago" on 4 Oct). The run is judged as one: its lowest RTT against the
+    # placed hop before it, and the placed hop after it.
+    i = 0
+    while i < len(located):
+        entry = located[i]
+        if entry.get("source") != SOURCE_IP_DB or entry.get("lat") is None:
+            i += 1
             continue
-        prev = next((e for e in reversed(located[:i]) if placed(e) and e.get("min_rtt_ms") is not None), None)
-        nxt = next((e for e in located[i + 1:] if placed(e)), None)
+        j = i
+        while (j + 1 < len(located) and located[j + 1].get("source") == SOURCE_IP_DB
+               and located[j + 1].get("lat") == entry["lat"] and located[j + 1].get("lon") == entry["lon"]):
+            j += 1
+        run = located[i:j + 1]
+        i = j + 1
+        rtts = [e["min_rtt_ms"] for e in run if e.get("min_rtt_ms") is not None]
+        if not rtts:
+            continue
+        start = located.index(run[0])
+        prev = next((e for e in reversed(located[:start]) if placed(e) and e.get("min_rtt_ms") is not None), None)
+        nxt = next((e for e in located[start + len(run):] if placed(e)), None)
         if prev is None or nxt is None:
             continue
         if haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"]) > NEIGHBOUR_SAME_AREA_KM:
@@ -622,23 +639,26 @@ def neighbour_check(located: list[dict]) -> list[dict]:
         if min(away_prev, away_next) < NEIGHBOUR_DETOUR_KM:
             continue
         needed = away_prev / KM_PER_MS_ROUND_TRIP
-        rose = entry["min_rtt_ms"] - prev["min_rtt_ms"]
+        rose = min(rtts) - prev["min_rtt_ms"]
         if rose >= needed:
             continue
+        span = (f"hop {run[0]['hop']}" if len(run) == 1 else f"hops {run[0]['hop']} to {run[-1]['hop']}")
         why = (f"{ANNOT_RTT_IMPOSSIBLE}: {away_prev:,.0f} km from hop {prev['hop']} "
                f"({prev.get('place') or 'placed'}) and back again by hop {nxt['hop']}, "
-               f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms")
-        for cand in entry["candidates"]:
-            if cand.get("source") == SOURCE_IP_DB and cand.get("accepted"):
-                cand["accepted"] = False
-                cand["why"] = why
-        for key in ("lat", "lon", "place", "cc", "distance_km", "rtt_budget_km"):
-            entry[key] = None
-        for key in ("ip_provider", "precision"):
-            entry.pop(key, None)
-        entry["source"] = SOURCE_UNRESOLVED
-        entry["annotations"] = [ANNOT_RTT_IMPOSSIBLE]
-        entry["reason"] = why
+               f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms"
+               + ("" if len(run) == 1 else f" ({span} answered from the same place)"))
+        for e in run:
+            for cand in e["candidates"]:
+                if cand.get("source") == SOURCE_IP_DB and cand.get("accepted"):
+                    cand["accepted"] = False
+                    cand["why"] = why
+            for key in ("lat", "lon", "place", "cc", "distance_km", "rtt_budget_km"):
+                e[key] = None
+            for key in ("ip_provider", "precision"):
+                e.pop(key, None)
+            e["source"] = SOURCE_UNRESOLVED
+            e["annotations"] = [ANNOT_RTT_IMPOSSIBLE]
+            e["reason"] = why
     return located
 
 

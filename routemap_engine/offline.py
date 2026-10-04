@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 from dataclasses import dataclass
 
 from routemap_engine.logsafe import tag
@@ -70,6 +71,10 @@ class OfflineCity:
         if is_sentinel(lat, lon):
             return None
         city = ((rec.get("city") or {}).get("names") or {}).get("en")
+        if city:
+            # DB-IP names districts ("Frankfurt am Main (Innenstadt I)"): false
+            # precision for a router, and it splits one city into several.
+            city = re.sub(r"\s*\([^)]*\)", "", city).strip() or city
         cc = (rec.get("country") or {}).get("iso_code")
         return {"lat": float(lat), "lon": float(lon), "city": city, "cc": cc,
                 "provider": PROVIDER_DBIP}

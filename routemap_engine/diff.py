@@ -4,20 +4,35 @@ is new, where the RTT changed, and whether the destination still answers.
 
 Hops are aligned by where they were placed, not by hop number: one extra hop
 early in a path shifts every later number, and a comparison by number would
-report the whole tail as changed. Local hops are left out of the alignment.
+report the whole tail as changed. Local hops are left out of the alignment,
+and so are the first hops placed at the origin itself (the user's own access
+network): whether one run's ISP hops were placed and the other's were not
+says nothing about the route.
+
+A run that did not reach the destination is told apart from one whose path
+changed: places the earlier run reached after the last place both share are
+"not reached", not "gone".
 """
 from __future__ import annotations
 
 import difflib
 
+from routemap_engine.geo import haversine_km
+
 RTT_CHANGE_MS = 20.0
+ACCESS_KM = 100.0
 
 
 def _seq(route: dict) -> list[dict]:
     out: list[dict] = []
+    origin = route.get("origin") or {}
+    leading = origin.get("lat") is not None
     for h in route.get("hops") or []:
         if h.get("lat") is None or h.get("source") == "local":
             continue
+        if leading and haversine_km(origin["lat"], origin["lon"], h["lat"], h["lon"]) <= ACCESS_KM:
+            continue
+        leading = False
         place = h.get("place") or f"{h['lat']:.2f},{h['lon']:.2f}"
         rtt = h.get("min_rtt_ms")
         if out and out[-1]["place"] == place:
@@ -41,6 +56,22 @@ def _trailing_silent(route: dict) -> int:
     return n
 
 
+def reached(route: dict) -> bool | None:
+    """Did the destination itself answer? None when the route names no target
+    address to check against."""
+    target = route.get("target")
+    if not target:
+        return None
+    return any(target in (h.get("addresses") or []) for h in route.get("hops") or [])
+
+
+def _unreached(old: dict, new: dict) -> bool:
+    r_old, r_new = reached(old), reached(new)
+    if r_old is not None and r_new is not None:
+        return r_old and not r_new
+    return _trailing_silent(new) > 0 and _trailing_silent(old) == 0
+
+
 def _last_answer(route: dict) -> dict | None:
     answered = [h for h in route.get("hops") or [] if h.get("min_rtt_ms") is not None]
     return answered[-1] if answered else None
@@ -56,10 +87,13 @@ def diff_routes(old: dict, new: dict, rtt_threshold_ms: float = RTT_CHANGE_MS) -
     a, b = _seq(old), _seq(new)
     sm = difflib.SequenceMatcher(a=[x["place"] for x in a], b=[x["place"] for x in b], autojunk=False)
     ops = sm.get_opcodes()
-    unreached = _trailing_silent(new) > 0 and _trailing_silent(old) == 0
+    unreached = _unreached(old, new)
+    last_equal = max((k for k, op in enumerate(ops) if op[0] == "equal"), default=-1)
     changes, old_marks, new_marks = [], {}, {}
+    not_reached = []
     for k, (tag, i1, i2, j1, j2) in enumerate(ops):
-        if tag == "delete" and unreached and k == len(ops) - 1:
+        if tag == "delete" and unreached and k > last_equal:
+            not_reached += [x["place"] for x in a[i1:i2]]
             continue    # not gone: the new trace did not get that far
         if tag in ("delete", "replace"):
             for x in a[i1:i2]:
@@ -94,10 +128,11 @@ def diff_routes(old: dict, new: dict, rtt_threshold_ms: float = RTT_CHANGE_MS) -
         for h in (new.get("hops") or [])[-silent:]:
             new_marks[h["hop"]] = "silent"
     return {"changes": changes, "old_marks": old_marks, "new_marks": new_marks,
-            "summary": summary(old, new, a, b, ops, changes, unreached)}
+            "not_reached": not_reached, "reached": {"old": reached(old), "new": reached(new)},
+            "summary": summary(old, new, a, b, ops, changes, unreached, not_reached)}
 
 
-def summary(old, new, a, b, ops, changes, unreached) -> str:
+def summary(old, new, a, b, ops, changes, unreached, not_reached=()) -> str:
     same = [x["place"] for tag, i1, i2, j1, j2 in ops if tag == "equal" for x in a[i1:i2]]
     parts = []
     if same:
@@ -126,9 +161,12 @@ def summary(old, new, a, b, ops, changes, unreached) -> str:
     if unreached and ln:
         silent = _trailing_silent(new)
         total = len(new.get("hops") or [])
-        parts.append(f"The destination did not answer this time: hops {total - silent + 1} to {total} are silent; "
-                     f"last answer {ln['min_rtt_ms']:.0f} ms at hop {ln['hop']}"
-                     + (f", against {lo['min_rtt_ms']:.0f} ms at hop {lo['hop']} then." if lo else "."))
+        where = f" ({ln['place']})" if ln.get("place") else ""
+        tail = (f"hops {total - silent + 1} to {total} are silent; " if silent else "")
+        parts.append(f"The destination did not answer this time: {tail}"
+                     f"last answer {ln['min_rtt_ms']:.0f} ms at hop {ln['hop']}{where}"
+                     + (f", against {lo['min_rtt_ms']:.0f} ms at hop {lo['hop']} then" if lo else "")
+                     + (f"; not reached: {', '.join(not_reached)}." if not_reached else "."))
     elif lo and ln and abs(ln["min_rtt_ms"] - lo["min_rtt_ms"]) >= RTT_CHANGE_MS:
         parts.append(f"Destination RTT {lo['min_rtt_ms']:.0f} ms then, {ln['min_rtt_ms']:.0f} ms now.")
     return " ".join(parts)

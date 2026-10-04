@@ -249,3 +249,86 @@ def test_an_enriched_route_still_matches_the_schema(name):
     osint.enrich_offline(route, _asn_db(table))
     assert any(h.get("asn") for h in route["hops"])
     jsonschema.validate(route, schema())
+
+
+# ------------------------------------------------------------ origin check ---
+
+MANILA, BANGKOK = (14.5995, 120.9842), (13.7563, 100.5018)
+
+
+def _first_hop_trace(rtt):
+    return ("traceroute to heise.de (193.99.144.80), 30 hops max\n"
+            f" 1  62.115.209.158 (62.115.209.158)  {rtt} ms\n"
+            " 2  62.115.112.222 (62.115.112.222)  60.0 ms\n")
+
+
+def _placing(lat, lon, city, cc):
+    async def ip_db(addrs):
+        return {a: {"lat": lat, "lon": lon, "city": city, "cc": cc, "provider": "dbip"} for a in addrs}
+    return ip_db
+
+
+def test_a_near_hop_rejected_because_of_the_origin_suggests_its_city():
+    """The trigger: a Manila trace analysed with origin Bangkok, the first
+    public hop answering in a few ms and placed in Manila, rejected."""
+    route = analyse_sync(_first_hop_trace(3.2), BANGKOK,
+                         sources=geo.Sources(ip_db=_placing(*MANILA, "Manila", "PH"))).to_dict()
+    check = osint.origin_check(route)
+    assert check and check["hop"] == 1 and check["rtt_ms"] == 3.2
+    assert "Manila" in check["suggest"]["label"]
+    assert route["origin"]["lat"] == BANGKOK[0], "the origin is never changed by the check"
+
+
+@pytest.mark.parametrize("origin,rtt,place", [
+    (MANILA, 3.2, (MANILA, "Manila", "PH")),        # the origin is right: placement accepted
+    (BANGKOK, 25.0, (MANILA, "Manila", "PH")),      # first hop too slow to say anything
+    (BANGKOK, 3.2, (MANILA, None, "PH")),           # country only: not confident
+])
+def test_no_suggestion_when_the_evidence_does_not_support_one(origin, rtt, place):
+    (lat, lon), city, cc = place
+    route = analyse_sync(_first_hop_trace(rtt), origin, sources=geo.Sources(ip_db=_placing(lat, lon, city, cc))).to_dict()
+    assert osint.origin_check(route) is None
+
+
+def test_local_hops_are_skipped_and_no_origin_means_no_check():
+    text = ("traceroute to x (1.1.1.1)\n 1  192.168.1.1 (192.168.1.1)  1.0 ms\n"
+            " 2  62.115.209.158 (62.115.209.158)  4.0 ms\n")
+    route = analyse_sync(text, BANGKOK, sources=geo.Sources(ip_db=_placing(*MANILA, "Manila", "PH"))).to_dict()
+    assert osint.origin_check(route)["hop"] == 2
+    route["origin"] = {}
+    assert osint.origin_check(route) is None
+
+
+
+def _hopd(n, place, rtt, addr, lat=0.0, lon=0.0):
+    return {"hop": n, "lat": lat if place else None, "lon": lon, "place": place, "min_rtt_ms": rtt,
+            "source": "hoiho" if place else "unresolved", "addresses": [addr] if addr else []}
+
+
+def test_a_run_that_did_not_reach_the_target_is_not_reported_as_lost_places():
+    """4 Oct: the new run ended with a router answering from Frankfurt, not
+    heise.de; Hanover, reached only by the earlier run, was called "gone"."""
+    old = {"target": "193.99.144.80", "hops": [_hopd(1, "A", 5, "1.1.1.1", 1), _hopd(2, "B", 9, "2.2.2.2", 2),
+                                                _hopd(3, "C", 12, "193.99.144.80", 3)]}
+    new = {"target": "193.99.144.80", "hops": [_hopd(1, "A", 5, "1.1.1.1", 1), _hopd(2, "B", 9, "2.2.2.2", 2),
+                                                _hopd(3, None, None, None), _hopd(4, "B", 9, "2.2.2.2", 2)]}
+    d = diff.diff_routes(old, new)
+    assert not [c for c in d["changes"] if c["kind"] == "removed"]
+    assert d["not_reached"] == ["C"] and d["reached"] == {"old": True, "new": False}
+    assert "did not answer this time" in d["summary"] and "not reached: C" in d["summary"]
+
+
+def test_hops_at_the_origin_are_not_a_route_change():
+    origin = {"lat": 14.6, "lon": 121.0}
+    old = {"origin": origin, "hops": [_hopd(1, None, 3, "10.0.0.1"), _hopd(2, "HK", 30, "9.9.9.9", 22.3, 114.2)]}
+    new = {"origin": origin, "hops": [_hopd(1, "Manila", 3, "8.8.4.4", 14.6, 121.0),
+                                      _hopd(2, "HK", 30, "9.9.9.9", 22.3, 114.2)]}
+    assert diff.diff_routes(old, new)["changes"] == []
+
+
+
+def test_db_ip_districts_are_dropped_from_city_names():
+    db = _city_db({"82.98.102": {"location": {"latitude": 50.11, "longitude": 8.68},
+                                 "city": {"names": {"en": "Frankfurt am Main (Innenstadt I)"}},
+                                 "country": {"iso_code": "DE"}}})
+    assert db.lookup_one("82.98.102.1")["city"] == "Frankfurt am Main"

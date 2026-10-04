@@ -466,3 +466,23 @@ def test_a_database_placement_between_two_hops_in_one_area_must_pay_for_its_deto
         assert "needs" in mid["reason"]
         assert any(c["source"] == "ip-db" and not c["accepted"] for c in mid["candidates"])
     assert hops[0]["source"] == hops[2]["source"] == "ip-db"
+
+
+
+def test_a_run_of_hops_answering_from_the_same_impossible_place_is_rejected_as_one():
+    """heise's hops 11 and 12 on 4 Oct: the same router answered twice, and
+    DB-IP placed both in Chicago between Frankfurt hops; the one-hop check let
+    the pair through."""
+    from routemap_engine.parse import Hop
+    hops = []
+    rows = [("62.115.132.229", 211.0), ("62.115.153.153", 256.3), ("62.115.153.153", 252.2),
+            ("82.98.102.1", 256.4)]
+    for n, (addr, rtt) in enumerate(rows, start=10):
+        h = Hop(hop=n)
+        h.addresses.append(addr)
+        h.rtts_ms.append(rtt)
+        hops.append(h)
+    table = {"62.115.132.229": FRANKFURT, "62.115.153.153": CHICAGO, "82.98.102.1": FRANKFURT}
+    out = asyncio.run(geo.resolve(hops, (14.5995, 120.9842), geo.Sources(ip_db=_ip_db_placing(table))))["hops"]
+    assert [h["source"] for h in out] == ["ip-db", "unresolved", "unresolved", "ip-db"]
+    assert "hops 11 to 12 answered from the same place" in out[1]["reason"]

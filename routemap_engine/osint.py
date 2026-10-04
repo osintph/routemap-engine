@@ -211,3 +211,51 @@ def is_public(addr: str) -> bool:
     except ValueError:
         return False
     return geo.classify_address(addr) == "public"
+
+
+# ------------------------------------------------------------- origin check ---
+
+ORIGIN_CHECK_RTT_MS = 10.0
+_CONFIDENT = (geo.SOURCE_HOIHO, geo.SOURCE_SITE_CODE, geo.SOURCE_IP_DB)
+
+
+def origin_check(route: dict, max_rtt_ms: float = ORIGIN_CHECK_RTT_MS) -> dict | None:
+    """For a trace run on the user's own machine: does the chosen origin fit?
+
+    The first public hop that answered in under *max_rtt_ms* is a few hundred
+    kilometres from the machine at most. When a source placed it confidently
+    (a hostname rule, a site code, or the IP database to a city, not just a
+    country) and the RTT bound rejected that placement because the origin is
+    too far away, the origin is almost certainly wrong (set to Bangkok while
+    the trace ran in Manila, say). Returns {"hop", "place", "lat", "lon",
+    "rtt_ms", "distance_km", "budget_km", "suggest"} for the caller to offer as
+    a one-click fix, or None. It never changes the origin itself.
+
+    Only meaningful for a trace run where the origin claims to be; callers
+    skip it for pasted traces and Atlas probes.
+    """
+    origin = route.get("origin") or {}
+    if origin.get("lat") is None:
+        return None
+    for hop in route.get("hops") or []:
+        public = [a for a in hop.get("addresses") or [] if is_public(a)]
+        if not public:
+            continue
+        rtt = hop.get("min_rtt_ms")
+        if rtt is None or rtt >= max_rtt_ms:
+            return None
+        for cand in hop.get("candidates") or []:
+            if cand.get("source") not in _CONFIDENT or cand.get("lat") is None:
+                continue
+            if cand.get("source") == geo.SOURCE_IP_DB and "," not in (cand.get("place") or ""):
+                continue          # country only: not confident enough to move an origin
+            if cand.get("accepted") or geo.ANNOT_RTT_IMPOSSIBLE not in (cand.get("why") or ""):
+                continue
+            near = cities.nearest(cand["lat"], cand["lon"], max_km=150) or {}
+            return {"hop": hop["hop"], "place": cand.get("place"), "lat": cand["lat"],
+                    "lon": cand["lon"], "rtt_ms": rtt, "distance_km": cand.get("distance_km"),
+                    "budget_km": cand.get("rtt_budget_km"),
+                    "suggest": {"label": near.get("display") or cand.get("place"),
+                                "lat": near.get("lat", cand["lat"]), "lon": near.get("lon", cand["lon"])}}
+        return None
+    return None

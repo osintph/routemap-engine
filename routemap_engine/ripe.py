@@ -184,13 +184,25 @@ def ris_agreement(data_plane: list[int], paths: list[list[int]]) -> dict:
 
     ``agree`` counts RIS paths that contain the data-plane path's ASNs as one
     consecutive run (the trace usually starts below where RIS peers sit, so a
-    suffix match is what agreement means). When none does, ``differs_at`` is
-    the first data-plane ASN whose next hop no RIS path shows.
+    suffix match is what agreement means), starting from the first data-plane
+    ASN that appears in any RIS path (``compared_from``). When none agrees,
+    ``differs_at`` is the first data-plane ASN whose next hop no RIS path shows.
     """
     dp = [a for a in data_plane if a]
     out = {"agree": 0, "total": len(paths), "differs_at": None, "origin_asns": sorted({p[-1] for p in paths if p})}
     if not dp or not paths:
         return out
+    # The trace starts in the user's own access network, which RIS peers do
+    # not carry in their paths (they peer further upstream). Compare from the
+    # first AS that RIS sees at all; otherwise every home trace "differs" at
+    # its own ISP.
+    # Only while two or more ASNs remain: trimmed to the origin AS alone, any
+    # path "agrees", which would hide a trace that left through a different
+    # transit network than BGP announces.
+    seen = {a for p in paths for a in p}
+    while len(dp) > 2 and dp[0] not in seen:
+        dp = dp[1:]
+    out["compared_from"] = dp[0]
 
     def contains(path):
         n = len(dp)
