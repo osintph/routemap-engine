@@ -157,6 +157,14 @@ def routable(hostnames) -> list[str]:
     return wanted
 
 
+# Where the newest ruleset date seen is kept in the cache, so answers served
+# from the cache still say which ruleset produced them.
+RULESET_KEY = "__hoiho_ruleset__"
+# A name no one has: asked only to learn the ruleset date when nothing in
+# the cache records it. It carries no user data.
+RULESET_PROBE = "ruleset-check.routemap.invalid"
+
+
 class Hoiho:
     """A configured Hoiho client. Cheap to build; holds no connection."""
 
@@ -225,7 +233,7 @@ class Hoiho:
         """
         wanted = routable(hostnames)
         if not wanted:
-            return {}, None
+            return {}, await self.ruleset_date()
 
         records: dict[str, dict] = {}
         missing: list[str] = []
@@ -239,7 +247,9 @@ class Hoiho:
             records[name] = cached
 
         if not missing:
-            return records, None
+            # Every answer came from the cache: report the ruleset recorded with
+            # them, never nothing (4 Oct 2026: orf.at showed null, heise.de 2024-08).
+            return records, await self.ruleset_date(records)
 
         ruleset: str | None = None
         async with httpx.AsyncClient() as client:
@@ -250,15 +260,50 @@ class Hoiho:
                 fetched, chunk_ruleset = await self.post_batch(client, chunk)
                 ruleset = ruleset or chunk_ruleset
                 for name, record in fetched.items():
+                    if chunk_ruleset:
+                        record = dict(record, ruleset_date=chunk_ruleset)
                     self.cache.set(name, record)
                     stored = dict(record)
                     stored["cached"] = False
                     records[name] = stored
 
+        if ruleset:
+            self._remember_ruleset(ruleset)
+        else:
+            # The API just answered without a date: take what the cache knows,
+            # but do not ask again.
+            ruleset = await self.ruleset_date(records, ask=False)
         matched = sum(1 for r in records.values() if r.get("located"))
         log.info("event=hoiho_lookup asked=%d cached=%d located=%d ruleset=%s",
                  len(wanted), len(wanted) - len(missing), matched, ruleset or "-")
         return records, ruleset
+
+    def _remember_ruleset(self, ruleset: str) -> None:
+        try:
+            self.cache.set(RULESET_KEY, {"ruleset_date": ruleset})
+        except Exception as exc:  # noqa: BLE001 - a cache that will not store is not an error
+            log.warning("hoiho ruleset not cached: %s", exc)
+
+    async def ruleset_date(self, records: dict | None = None, ask: bool = True) -> str | None:
+        """The ruleset behind these answers: recorded with them, kept in the
+        cache, or, failing both and when *ask*, asked of the API with a
+        placeholder name (no user data; only when no live lookup ran)."""
+        for record in (records or {}).values():
+            if record.get("ruleset_date"):
+                return str(record["ruleset_date"])
+        try:
+            kept = self.cache.get(RULESET_KEY)
+        except Exception:  # noqa: BLE001
+            kept = None
+        if kept and kept.get("ruleset_date"):
+            return str(kept["ruleset_date"])
+        if not ask:
+            return None
+        async with httpx.AsyncClient() as client:
+            _, ruleset = await self.post_batch(client, [RULESET_PROBE])
+        if ruleset:
+            self._remember_ruleset(ruleset)
+        return ruleset
 
     async def lookup_one(self, hostname: str) -> dict | None:
         """One hostname. Used by tests and the CLI's diagnostics."""

@@ -502,7 +502,11 @@ PARSER_LABELS = {
     "mtr": "mtr --report",
     "traceroute": "Unix traceroute",
     "tracert": "Windows tracert",
+    "icmp": "Built-in ICMP prober",
 }
+# The built-in prober prints BSD traceroute output with this at the end of its
+# header, so a trace it ran is labelled as such on every platform.
+_ICMP_MARK = "routemap-engine built-in prober"
 
 
 def parse_trace(text: str) -> ParsedTrace:
@@ -545,4 +549,6 @@ def parse_trace(text: str) -> ParsedTrace:
             f"{' and others' if len(missing) > 8 else ''} "
             "missing from the pasted text, so the path is drawn with a gap there")
 
+    if name == "traceroute" and lines and _ICMP_MARK in lines[0]:
+        name = "icmp"
     return ParsedTrace(parser=name, hops=hops, target=target, warnings=warnings)

@@ -20,7 +20,8 @@
         "tracert",
         "traceroute",
         "mtr",
-        "hops"
+        "hops",
+        "icmp"
       ]
     },
     "parser_label": {

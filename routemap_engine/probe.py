@@ -56,6 +56,8 @@ QUERIES = 3
 WAIT_SECONDS = 1.0
 PAYLOAD = b"routemap-engine-probe" + b"\0" * 11      # 32 bytes, like tracert
 TOOL_NAME = "icmp"
+# Ends the header line so the parser can name the tool (parse.PARSER_LABELS).
+HEADER_MARK = "ICMP echo, routemap-engine built-in prober"
 
 
 @dataclass
@@ -209,14 +211,15 @@ def _windows_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
         start = time.perf_counter()
         count = lib.IcmpSendEcho(handle, dest, request, len(PAYLOAD), ctypes.byref(options), reply, size,
                                  int(wait * 1000))
+        # The same high-resolution clock as the POSIX probes. RoundTripTime is
+        # whole milliseconds and was used at 10 ms and above, so every hop
+        # past the access network read 26.000, 252.000 (ODIN, 4 Oct 2026).
         elapsed = (time.perf_counter() - start) * 1000
         if count == 0:
             return Reply(None, None)
         echo = EchoReply.from_buffer_copy(reply.raw[:ctypes.sizeof(EchoReply)])
         address = socket.inet_ntoa(struct.pack("<I", echo.Address))
-        # RoundTripTime is whole milliseconds; the wall clock is finer and
-        # never smaller, so use it below 10 ms where the rounding matters.
-        rtt = float(echo.RoundTripTime) if echo.RoundTripTime >= 10 else round(elapsed, 3)
+        rtt = round(elapsed, 3)
         if echo.Status == IP_SUCCESS:
             return Reply(address, rtt, reached=True)
         if echo.Status == IP_TTL_EXPIRED_TRANSIT:
@@ -296,7 +299,7 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
             except Exception:  # noqa: BLE001
                 pass
 
-    emit(f"traceroute to {target} ({dst}), {max_hops} hops max, {8 + len(PAYLOAD)} byte packets")
+    emit(f"traceroute to {target} ({dst}), {max_hops} hops max, {8 + len(PAYLOAD)} byte packets, {HEADER_MARK}")
     seq = 0
     for ttl in range(1, max_hops + 1):
         if cancel is not None and cancel.is_set():

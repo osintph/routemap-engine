@@ -171,6 +171,16 @@ class RipeStat:
     async def bgp_updates(self, prefix: str, hours: int = 48,
                           end: _dt.datetime | None = None) -> list[str] | None:
         """ISO timestamps of BGP updates for *prefix* over the last *hours*."""
+        window = await self.bgp_update_window(prefix, hours, end)
+        return None if window is None else window["timestamps"]
+
+    async def bgp_update_window(self, prefix: str, hours: int = 48,
+                                end: _dt.datetime | None = None) -> dict | None:
+        """{"timestamps": [...], "until": datetime}: the updates, and how far
+        RIPEstat's data reaches. RIPEstat ingests route-collector data with a
+        lag of a few hours and answers with ``query_endtime`` clamped to what
+        it has (asked at 11:24 UTC on 4 Oct 2026, it answered up to 07:59), so
+        the hours after ``until`` are not yet known rather than quiet."""
         end = end or _dt.datetime.now(_dt.timezone.utc)
         start = end - _dt.timedelta(hours=hours)
         d = await self.call("bgp-updates", resource=prefix,
@@ -178,7 +188,16 @@ class RipeStat:
                             endtime=end.strftime("%Y-%m-%dT%H:%M"))
         if d is None:
             return None
-        return [u.get("timestamp") for u in d.get("updates") or [] if u.get("timestamp")]
+        until = end
+        try:
+            got = _dt.datetime.fromisoformat(str(d.get("query_endtime")).replace("Z", "+00:00"))
+            if got.tzinfo is None:
+                got = got.replace(tzinfo=_dt.timezone.utc)
+            until = min(end, got)
+        except ValueError:
+            pass
+        return {"timestamps": [u.get("timestamp") for u in d.get("updates") or [] if u.get("timestamp")],
+                "until": until}
 
     async def as_overview(self, asn: int) -> dict | None:
         d = await self.call("as-overview", resource=f"AS{asn}")
@@ -239,7 +258,32 @@ def ris_agreement(data_plane: list[int], paths: list[list[int]]) -> dict:
             if (a, b) not in pairs:
                 out["differs_at"] = a
                 break
+    out["diverge"] = _divergence(dp, [p for p in paths if not contains(p)])
     return out
+
+
+def _divergence(dp: list[int], others: list[list[int]], top: int = 3) -> list[dict]:
+    """Where the RIS paths that do not carry the trace's path leave it.
+
+    Aligned from the origin end (both end at the origin AS): the longest
+    shared tail is where they join; the AS before it in the RIS path is the
+    other way in. [{"joins_at": 1299, "via": 3356, "instead_of": 64500, "paths": 120}, ...],
+    most common first. "via" is None for RIS paths that start at the join
+    (the collector peers with that AS directly); "joins_at" is None for paths
+    with a different origin AS.
+    """
+    counts: dict[tuple, int] = {}
+    for p in others:
+        k = 0
+        while k < min(len(dp), len(p)) and dp[-1 - k] == p[-1 - k]:
+            k += 1
+        if k == 0:
+            key = (None, p[-1] if p else None, None)
+        else:
+            key = (dp[-k], p[-k - 1] if len(p) > k else None, dp[-k - 1] if len(dp) > k else None)
+        counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))
+    return [{"joins_at": j, "via": v, "instead_of": i, "paths": n} for (j, v, i), n in ranked[:top]]
 
 
 def update_burst(timestamps: list[str], at: _dt.datetime, window_minutes: int = 30,
@@ -258,9 +302,12 @@ def update_burst(timestamps: list[str], at: _dt.datetime, window_minutes: int = 
     return near if near >= threshold else None
 
 
-def hourly_bins(timestamps: list[str], end: _dt.datetime, hours: int = 48) -> list[int]:
-    """Update counts per hour, oldest first, for the timeline."""
-    bins = [0] * hours
+def hourly_bins(timestamps: list[str], end: _dt.datetime, hours: int = 48,
+                until: _dt.datetime | None = None) -> list[int | None]:
+    """Update counts per hour, oldest first, for the timeline. Hours that end
+    after *until* (where RIPEstat's data stops) are None, not 0: not yet
+    known is not the same as quiet."""
+    bins: list[int | None] = [0] * hours
     for ts in timestamps or []:
         try:
             t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -269,6 +316,12 @@ def hourly_bins(timestamps: list[str], end: _dt.datetime, hours: int = 48) -> li
         if t.tzinfo is None:
             t = t.replace(tzinfo=_dt.timezone.utc)
         k = int((end - t).total_seconds() // 3600)
-        if 0 <= k < hours:
+        if 0 <= k < hours and bins[hours - 1 - k] is not None:
             bins[hours - 1 - k] += 1
+    if until is not None and until < end:
+        for i in range(hours):
+            # bin i covers (end - (hours - i) h, end - (hours - 1 - i) h]
+            bin_start = end - _dt.timedelta(hours=hours - i)
+            if bin_start >= until:
+                bins[i] = None
     return bins

@@ -22,6 +22,25 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - `RipeStat.errors` and `Baseline.error`: why the last call failed, for the
   caller to show instead of an empty section.
 
+### Fixed (from testing on Windows with real routers, 4 Oct 2026)
+- Built-in prober RTTs on Windows: every probe is now timed with the same
+  high-resolution clock as on macOS and Linux. The Windows API's own round
+  trip time is whole milliseconds and was used from 10 ms up, so every hop
+  past the access network read as a whole millisecond.
+- A trace from the built-in prober is labelled "Built-in ICMP prober"
+  (parser `icmp`; the route schema gains that value) on every platform,
+  instead of "Unix traceroute".
+- `ripe.ris_agreement` says where the disagreeing RIS paths leave the
+  trace's path (`diverge`: where they join it, through which AS, how many),
+  also when some paths agree; `differs_at` was only set when none did.
+- `RipeStat.bgp_update_window` returns how far RIPEstat's data reaches
+  (`until`, from its `query_endtime`; its route-collector data runs a few
+  hours behind), and `ripe.hourly_bins(..., until=)` marks the hours after it
+  as not yet available (None) instead of 0.
+- The Hoiho ruleset date is always reported: answers served from the cache
+  carry the date they were made with, and when nothing records one, the API
+  is asked with a placeholder name that carries no user data.
+
 ### Changed
 - RIPEstat: `looking-glass` and `bgp-updates` wait up to 20 s and
   `routing-status` up to 15 s, each with one retry; the other endpoints keep
