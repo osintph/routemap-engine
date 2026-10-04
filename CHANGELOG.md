@@ -2,6 +2,46 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.3.1] - 2026-10-04
+
+### Added
+- `probe`: the engine's own ICMP traceroute, the same on Windows, macOS and
+  Linux: 30 hops, three probes per hop, one second per reply, every
+  responding router listed (BSD-style continuation lines, which the parser
+  already reads). No administrator rights: Windows uses the system ICMP API
+  (`IcmpSendEcho`, as `tracert` does); macOS and Linux use unprivileged ICMP
+  datagram sockets (on Linux only where `net.ipv4.ping_group_range` allows
+  them). IPv4 only; an IPv6 target falls back to the system tool.
+- `runner`: the built-in prober is the tool `icmp`, first in `auto` wherever
+  it can run; `icmp_status()` says why when it cannot. `tracert`,
+  `traceroute` and `mtr` stay available.
+- `osint.origin_check(route)`: for a trace run where the origin claims to be,
+  reports a first public hop under 10 ms whose confident placement the
+  origin's RTT bound rejected, with the nearby city to offer as a fix. Never
+  changes the origin itself.
+- `RipeStat.errors` and `Baseline.error`: why the last call failed, for the
+  caller to show instead of an empty section.
+
+### Changed
+- RIPEstat: `looking-glass` and `bgp-updates` wait up to 20 s and
+  `routing-status` up to 15 s, each with one retry; the other endpoints keep
+  8 s and no retry.
+- `ripe.ris_agreement` compares from the first AS any RIS path carries (the
+  user's own access network never appears in RIS paths), while at least two
+  ASNs remain; the result says where it started (`compared_from`).
+- The neighbour check judges a run of consecutive database placements at
+  the same point as one detour (a router that answered twice).
+- `diff.diff_routes`: whether the destination answered is judged by the
+  target address, so places a run did not reach are reported as "not
+  reached" (`not_reached`), not as gone; the first hops placed at the origin
+  (the access network) are left out of the comparison.
+- DB-IP Lite City names drop district suffixes ("Frankfurt am Main
+  (Innenstadt I)" becomes "Frankfurt am Main").
+
+### Unchanged
+- `analyse`, `resolve` and the route schema behave as in 0.3.0 apart from the
+  neighbour-check and DB-IP name changes above.
+
 ## [0.3.0] - 2026-10-04
 
 ### Added
