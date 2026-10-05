@@ -32,7 +32,7 @@ from typing import Callable
 
 import httpx
 
-from routemap_engine import geo
+from routemap_engine import geo, httpclient
 from routemap_engine.logsafe import tag
 
 log = logging.getLogger("routemap_engine.atlas")
@@ -91,7 +91,7 @@ class Atlas:
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
         if authenticated:
             headers["Authorization"] = f"Key {self.key}"
-        return httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=20.0)
+        return httpclient.client(base_url=self.base_url, headers=headers, timeout=20.0)
 
     async def probes(self, params: dict) -> list[dict]:
         # Probe lists are public; the key is not sent where it is not needed.

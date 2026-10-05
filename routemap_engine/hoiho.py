@@ -76,6 +76,7 @@ import math
 
 import httpx
 
+from routemap_engine import clean, httpclient
 from routemap_engine.__about__ import REPO_URL, USER_AGENT_PRODUCT
 from routemap_engine.cache import Cache, NullCache
 from routemap_engine.logsafe import tag
@@ -107,6 +108,17 @@ def _coord(raw) -> float | None:
     return value
 
 
+def _checked_fields(record: dict) -> dict:
+    """The text fields of a record, checked as match_to_record checks them."""
+    out = {key: clean.text(record.get(key), limit) for key, limit in
+           (("place", 80), ("st", 80), ("iata", 8), ("locode", 8), ("clli", 16))}
+    out["cc"] = clean.country(record.get("cc"))
+    out["ruleset_date"] = clean.month(record.get("ruleset_date"))
+    for key in ("match_strs", "match_meanings"):
+        out[key] = [t for t in (clean.text(s) for s in (record.get(key) or [])[:8]) if t]
+    return out
+
+
 def match_to_record(match: dict) -> dict:
     """One ``HostnameInfo`` as the record we cache and return.
 
@@ -125,18 +137,18 @@ def match_to_record(match: dict) -> dict:
         "located": located,
         "lat": lat if located else None,
         "lng": lng if located else None,
-        "place": match.get("place") or None,
-        "st": match.get("st") or None,
-        "cc": match.get("cc") or None,
-        "iata": match.get("iata") or None,
-        "locode": match.get("locode") or None,
-        "clli": match.get("clli") or None,
+        "place": clean.text(match.get("place")),
+        "st": clean.text(match.get("st")),
+        "cc": clean.country(match.get("cc")),
+        "iata": clean.text(match.get("iata"), 8),
+        "locode": clean.text(match.get("locode"), 8),
+        "clli": clean.text(match.get("clli"), 16),
         # The substring the rule fired on and what it was read as ("sanjose" /
         # "place"). Shown in the UI because it is the evidence for the claim:
         # an operator can see that a hop was placed in San Jose because the
         # hostname literally says sanjose.
-        "match_strs": [str(s) for s in (match.get("match_strs") or [])][:8],
-        "match_meanings": [str(s) for s in (match.get("match_meanings") or [])][:8],
+        "match_strs": [t for t in (clean.text(s) for s in (match.get("match_strs") or [])[:8]) if t],
+        "match_meanings": [t for t in (clean.text(s) for s in (match.get("match_meanings") or [])[:8]) if t],
     }
 
 
@@ -207,7 +219,7 @@ class Hoiho:
             return {}, None
 
         summary = body.get("summary") or {}
-        ruleset = summary.get("ruleset_date") if isinstance(summary, dict) else None
+        ruleset = clean.month(summary.get("ruleset_date")) if isinstance(summary, dict) else None
 
         records: dict[str, dict] = {}
         for match in (body.get("matches") or []):
@@ -242,7 +254,9 @@ class Hoiho:
             if cached is None:
                 missing.append(name)
                 continue
-            cached = dict(cached)
+            # Through the same checks as a fresh answer: an older cache, or one
+            # written by another program, holds whatever it was given.
+            cached = dict(cached, **_checked_fields(cached))
             cached["cached"] = True
             records[name] = cached
 
@@ -252,7 +266,7 @@ class Hoiho:
             return records, await self.ruleset_date(records)
 
         ruleset: str | None = None
-        async with httpx.AsyncClient() as client:
+        async with httpclient.client() as client:
             for index in range(0, len(missing), BATCH_SIZE):
                 chunk = missing[index:index + BATCH_SIZE]
                 if index:
@@ -289,17 +303,17 @@ class Hoiho:
         cache, or, failing both and when *ask*, asked of the API with a
         placeholder name (no user data; only when no live lookup ran)."""
         for record in (records or {}).values():
-            if record.get("ruleset_date"):
-                return str(record["ruleset_date"])
+            if clean.month(record.get("ruleset_date")):
+                return record["ruleset_date"]
         try:
             kept = self.cache.get(RULESET_KEY)
         except Exception:  # noqa: BLE001
             kept = None
-        if kept and kept.get("ruleset_date"):
-            return str(kept["ruleset_date"])
+        if kept and clean.month(kept.get("ruleset_date")):
+            return kept["ruleset_date"]
         if not ask:
             return None
-        async with httpx.AsyncClient() as client:
+        async with httpclient.client() as client:
             _, ruleset = await self.post_batch(client, [RULESET_PROBE])
         if ruleset:
             self._remember_ruleset(ruleset)

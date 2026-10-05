@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import secrets
 import socket
 import struct
 import sys
@@ -54,6 +55,11 @@ from typing import Callable
 MAX_HOPS = 30
 QUERIES = 3
 WAIT_SECONDS = 1.0
+# Bounds for the -m, -q and -w values a caller or a setting asks for (RM-12):
+# IP's TTL ceiling, and as many probes and seconds as any real use needs.
+MAX_TTL = 255
+MAX_QUERIES = 10
+MAX_WAIT_SECONDS = 10.0
 PAYLOAD = b"routemap-engine-probe" + b"\0" * 11      # 32 bytes, like tracert
 TOOL_NAME = "icmp"
 # Ends the header line so the parser can name the tool (parse.PARSER_LABELS).
@@ -79,6 +85,38 @@ def _checksum(data: bytes) -> int:
 def _echo(ident: int, seq: int) -> bytes:
     header = struct.pack("!BBHHH", 8, 0, 0, ident, seq)
     return struct.pack("!BBHHH", 8, 0, _checksum(header + PAYLOAD), ident, seq) + PAYLOAD
+
+
+def _match_reply(raw: bytes, source: str, dst: str, seq: int) -> tuple[bool, bool]:
+    """(accept, reached) for one ICMP message read from the socket (RM-10).
+
+    The socket also sees replies meant for other programs and anything another
+    host chooses to send, so a message counts only when it answers this probe:
+    an echo reply from the target with this probe's sequence number, or an
+    error that quotes at least 8 bytes of an echo request to the target with
+    this sequence number. The identifier is not compared: Linux rewrites it."""
+    # macOS includes the IP header; Linux gives the ICMP message alone.
+    off = (raw[0] & 0x0F) * 4 if raw and raw[0] >> 4 == 4 else 0
+    if len(raw) < off + 8:
+        return False, False
+    icmp_type = raw[off]
+    if icmp_type == 0:                                   # echo reply: the target
+        ok = source == dst and struct.unpack("!H", raw[off + 6:off + 8])[0] == seq
+        return ok, ok
+    if icmp_type in (11, 3):                             # time exceeded, unreachable
+        inner = raw[off + 8:]
+        if not inner or inner[0] >> 4 != 4:
+            return False, False
+        ihl = (inner[0] & 0x0F) * 4
+        if ihl < 20 or len(inner) < ihl + 8:
+            return False, False
+        if inner[16:20] != socket.inet_aton(dst):        # quoted destination
+            return False, False
+        quoted = inner[ihl:ihl + 8]
+        if quoted[0] != 8 or struct.unpack("!H", quoted[6:8])[0] != seq:
+            return False, False
+        return True, icmp_type == 3 and source == dst
+    return False, False
 
 
 # ------------------------------------------------------------------ POSIX ---
@@ -110,8 +148,11 @@ def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
                 continue
             if linux:
                 try:
-                    _, ancdata, _, _ = sock.recvmsg(512, 512, MSG_ERRQUEUE)
+                    sent, ancdata, _, _ = sock.recvmsg(512, 512, MSG_ERRQUEUE)
                 except BlockingIOError:
+                    sent, ancdata = b"", []
+                # The kernel returns the request the error is about: only ours counts.
+                if len(sent) < 8 or struct.unpack("!H", sent[6:8])[0] != seq:
                     ancdata = []
                 for level, kind, data in ancdata:
                     if level == socket.IPPROTO_IP and kind == IP_RECVERR and len(data) >= 16 + 8:
@@ -126,22 +167,9 @@ def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
             except (BlockingIOError, OSError):
                 continue
             rtt = (time.perf_counter() - start) * 1000
-            # macOS includes the IP header; Linux gives the ICMP message alone.
-            off = (raw[0] & 0x0F) * 4 if raw and raw[0] >> 4 == 4 else 0
-            if len(raw) < off + 8:
-                continue
-            icmp_type = raw[off]
-            if icmp_type == 0:                       # echo reply: the target
-                return Reply(addr[0], rtt, reached=True)
-            if icmp_type in (11, 3):                 # time exceeded, unreachable
-                inner = raw[off + 8:]
-                inner_off = (inner[0] & 0x0F) * 4 if inner and inner[0] >> 4 == 4 else 0
-                quoted = inner[inner_off:inner_off + 8]
-                if len(quoted) >= 8:
-                    q_seq = struct.unpack("!H", quoted[6:8])[0]
-                    if q_seq != seq:
-                        continue                     # an earlier probe's late answer
-                return Reply(addr[0], rtt, reached=icmp_type == 3 and addr[0] == dst)
+            accept, reached = _match_reply(raw, addr[0], dst, seq)
+            if accept:
+                return Reply(addr[0], rtt, reached=reached)
     finally:
         sock.close()
 
@@ -189,7 +217,8 @@ def _windows_api():
                     ("Reserved", ctypes.c_ushort), ("Data", ctypes.c_void_p),
                     ("Options", IP_OPTION_INFORMATION)]
 
-    lib = ctypes.WinDLL("iphlpapi.dll", use_last_error=True)
+    # System32 only: the default search would take a copy from the app folder first.
+    lib = ctypes.WinDLL("iphlpapi.dll", use_last_error=True, winmode=0x800)  # LOAD_LIBRARY_SEARCH_SYSTEM32
     lib.IcmpCreateFile.restype = wintypes.HANDLE
     lib.IcmpCloseHandle.argtypes = [wintypes.HANDLE]
     lib.IcmpSendEcho.argtypes = [wintypes.HANDLE, ctypes.c_uint32, ctypes.c_void_p, wintypes.WORD,
@@ -289,6 +318,9 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
     timed_out). IPv4 only; the caller handles IPv6 with the system tool."""
     dst = socket.gethostbyname(target)
     ipaddress.IPv4Address(dst)
+    max_hops = max(1, min(int(max_hops), MAX_TTL))
+    queries = max(1, min(int(queries), MAX_QUERIES))
+    wait = max(0.1, min(float(wait), MAX_WAIT_SECONDS))
     out: list[str] = []
 
     def emit(line: str):
@@ -300,7 +332,8 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
                 pass
 
     emit(f"traceroute to {target} ({dst}), {max_hops} hops max, {8 + len(PAYLOAD)} byte packets, {HEADER_MARK}")
-    seq = 0
+    # A random start, so a reply cannot be guessed from the trace's position.
+    seq = secrets.randbelow(0x10000)
     for ttl in range(1, max_hops + 1):
         if cancel is not None and cancel.is_set():
             return "\n".join(out) + "\n", True, False
@@ -308,6 +341,12 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
             return "\n".join(out) + "\n", False, True
         replies = []
         for _ in range(queries):
+            # Before every probe, not only every hop: Stop and the time limit
+            # never wait for more than one probe.
+            if cancel is not None and cancel.is_set():
+                return "\n".join(out) + "\n", True, False
+            if deadline is not None and time.monotonic() > deadline:
+                return "\n".join(out) + "\n", False, True
             seq = (seq + 1) & 0xFFFF
             replies.append(_probe(dst, ttl, seq, wait))
         for line in format_hop(ttl, replies):

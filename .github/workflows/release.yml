@@ -4,6 +4,10 @@
 # One-time setup on pypi.org (the project owner): Publishing > Add a pending
 # publisher: project "routemap-engine", owner "osintph", repository
 # "routemap-engine", workflow "release.yml", environment "pypi".
+#
+# Built from fixed inputs only: every action by commit, every package by hash
+# from requirements/release.txt, and the build without an isolated environment
+# (which would fetch its own, unpinned build backend).
 name: release
 
 on:
@@ -17,18 +21,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: python -m pip install -e ".[dev]" build
+      - run: python -m pip install --require-hashes -r requirements/release.txt
+      - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: python -m pytest
       - name: Version matches tag
         run: |
           V="$(python -c 'from routemap_engine.__about__ import __version__ as v; print(v)')"
           test "v$V" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but version $V"; exit 1; }
-      - run: python -m build
-      - uses: actions/upload-artifact@v4
+      - run: python -m build --no-isolation
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
@@ -40,11 +47,11 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
   github-release:
     needs: build
@@ -52,8 +59,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/

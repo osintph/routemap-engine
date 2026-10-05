@@ -57,6 +57,9 @@ MAX_TRACE_BYTES = 256_000
 MAX_LINES = 2_000
 # Protocol maximum. Anything beyond it is a parser artefact, not a hop.
 MAX_HOPS = 255
+# Real hop lines are under 300 characters. Longer lines are refused before any
+# pattern sees them, so no pattern has to be fast on 250,000 characters (RM-02).
+MAX_LINE_CHARS = 1_000
 
 
 class TraceParseError(ValueError):
@@ -177,6 +180,10 @@ def _clean(text: str) -> list[str]:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     if len(lines) > MAX_LINES:
         raise TraceParseError(f"the trace has more than {MAX_LINES} lines")
+    for number, line in enumerate(lines, 1):
+        if len(line) > MAX_LINE_CHARS:
+            raise TraceParseError(
+                f"line {number} is longer than {MAX_LINE_CHARS} characters; that is not a trace line")
     return lines
 
 
@@ -218,8 +225,8 @@ def _dedupe_hops(hops: list[Hop]) -> list[Hop]:
 #     4    15 ms    14 ms    15 ms  host.example.net [203.0.113.1]
 #     5    <1 ms     2 ms    <1 ms  10.0.0.1
 
-_TRACERT_BANNER = re.compile(r"^\s*Tracing route to\s+(.+?)\s*(?:\[([^\]]+)\])?\s*$", re.I)
-_TRACERT_HOP = re.compile(r"^\s*(\d{1,3})\s+(.*\S)\s*$")
+_TRACERT_BANNER = re.compile(r"^\s*Tracing route to\s+(\S+)(?:\s+\[([^\]]+)\])?\s*$", re.I)
+_TRACERT_HOP = re.compile(r"^\s*(\d{1,3})\s+(\S.*)$")
 # A probe column: "*", "<1 ms", "12 ms", "1.5 ms". The "<" form is Windows
 # saying "faster than the clock can see", which is 0 for our purposes, not a
 # missing probe.
@@ -248,7 +255,7 @@ def _parse_tracert(lines: list[str]) -> tuple[list[Hop], int, str | None, bool]:
         match = _TRACERT_HOP.match(raw)
         if not match:
             continue
-        number, body = int(match.group(1)), match.group(2)
+        number, body = int(match.group(1)), match.group(2).rstrip()
         if not 1 <= number <= MAX_HOPS:
             continue
 
@@ -303,13 +310,13 @@ def _parse_tracert(lines: list[str]) -> tuple[list[Hop], int, str | None, bool]:
 
 _TRACEROUTE_BANNER = re.compile(
     r"^\s*traceroute(?:6)?\s+to\s+(\S+)\s*(?:\(([^)]+)\))?", re.I)
-_TRACEROUTE_HOP = re.compile(r"^\s*(\d{1,3})\s+(.*\S)\s*$")
+_TRACEROUTE_HOP = re.compile(r"^\s*(\d{1,3})\s+(\S.*)$")
 # An indented line continues the previous hop: an ECMP hop that answered from
 # more than one address. No lookahead for a leading digit, because a
 # continuation's first token very often starts with one
 # ("edge-46.isp.example.net"); what makes a line a hop line is
 # _TRACEROUTE_HOP matching, and that is tried first.
-_TRACEROUTE_CONT = re.compile(r"^\s{2,}(\S.*\S|\S)\s*$")
+_TRACEROUTE_CONT = re.compile(r"^\s{2,}(\S.*)$")
 
 # Tokens in a hop body, matched in order. "named" must precede "bare" so
 # "host (1.2.3.4)" is one token rather than two, and "rtt" must precede "bare"
@@ -387,7 +394,7 @@ def _parse_traceroute(lines: list[str]) -> tuple[list[Hop], int, str | None, boo
                 current = None
                 continue
             hop = Hop(hop=number)
-            if _traceroute_body_into(hop, match.group(2)):
+            if _traceroute_body_into(hop, match.group(2).rstrip()):
                 hops.append(hop)
                 current = hop
             else:
@@ -396,7 +403,7 @@ def _parse_traceroute(lines: list[str]) -> tuple[list[Hop], int, str | None, boo
 
         cont = _TRACEROUTE_CONT.match(raw)
         if cont and current is not None:
-            _traceroute_body_into(current, cont.group(1))
+            _traceroute_body_into(current, cont.group(1).rstrip())
             continue
         current = None
 

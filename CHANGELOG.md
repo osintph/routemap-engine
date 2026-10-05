@@ -2,6 +2,47 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.4.1] - 2026-10-05
+
+Security fixes from a review of the app, the engine and the site. No change to
+what a correct trace or a well-formed answer produces.
+
+### Security
+- The parser refuses a line longer than 1,000 characters, and its patterns no
+  longer backtrack: a 2,000-character banner line took 7 s and a longer one
+  minutes, which hung a window or a server that parses pasted text. Every
+  pattern now finishes in well under a millisecond on its worst case
+  (`MAX_LINE_CHARS`).
+- Trace tools are run from the system's own folders only. On Windows,
+  `tracert.exe` comes from System32 (found through `GetSystemDirectoryW`); the
+  current folder and PATH are no longer searched, so a `tracert.cmd` in the
+  working folder is never run. On macOS and Linux the system folders come
+  before PATH, and PATH's empty or relative entries are skipped
+  (`runner.tool_path`).
+- The Windows ICMP API (`iphlpapi.dll`) is loaded from System32 only, not from
+  the application's folder.
+- The built-in prober accepts only replies to its own probe: an echo reply
+  must come from the target with the probe's sequence number, and an ICMP
+  error must quote the whole echo request to the target with that sequence
+  number. Sequence numbers start at a random value. Forged or stray replies on
+  the same network no longer add hops or end a trace early.
+- The prober's hop count, probes per hop and wait are clamped to 255, 10 and
+  10 s, and Stop and the time limit are checked before every probe.
+- No answer from an API is read past 2 MB, whether or not the server says how
+  long it is: every HTTP client the engine makes now comes from
+  `httpclient.client()`.
+- Fields from Hoiho and RIPEstat are checked before they are passed on, also
+  when they come from the cache: a country code is two letters, the Hoiho
+  ruleset date is a month (YYYY-MM), a prefix is a network, and names are short
+  plain text without markup characters (`clean`).
+- dnspython 2.6.1 or newer (CVE-2023-29483).
+
+### Changed
+- Releases are built from fixed inputs: every GitHub Action is pinned to a
+  commit, the release job installs only from `requirements/release.txt` (hashes
+  for every package), and the wheel is built without an isolated environment.
+  The tests run the same locked install on every push.
+
 ## [0.4.0] - 2026-10-05
 
 A minor release, not a patch: `ripe.hourly_bins` can return None for an hour,

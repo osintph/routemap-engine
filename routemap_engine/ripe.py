@@ -24,6 +24,7 @@ import time
 
 import httpx
 
+from routemap_engine import clean, httpclient
 from routemap_engine.logsafe import tag
 
 log = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ class RipeStat:
             try:
                 async with self._sem:
                     await self._pace()
-                    async with httpx.AsyncClient(transport=self._transport, timeout=limit,
+                    async with httpclient.client(transport=self._transport, timeout=limit,
                                                  headers={"User-Agent": self.user_agent}) as client:
                         response = await asyncio.wait_for(
                             client.get(BASE.format(endpoint), params=query), timeout=limit + 1)
@@ -131,9 +132,10 @@ class RipeStat:
     async def network_info(self, addr: str) -> dict | None:
         """{"prefix": "62.115.0.0/16", "asns": [1299]} for a public address."""
         d = await self.call("network-info", resource=addr)
-        if not d or not d.get("prefix"):
+        net = clean.prefix((d or {}).get("prefix"))
+        if not net:
             return None
-        return {"prefix": d["prefix"], "asns": [int(a) for a in d.get("asns") or [] if str(a).isdigit()]}
+        return {"prefix": net, "asns": [int(a) for a in d.get("asns") or [] if str(a).isdigit()][:32]}
 
     async def rir(self, addr: str) -> str | None:
         d = await self.call("rir", resource=addr)

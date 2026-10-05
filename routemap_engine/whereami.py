@@ -15,9 +15,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 
-import httpx
-
-from routemap_engine import cities, geo
+from routemap_engine import cities, geo, httpclient
 from routemap_engine.logsafe import tag
 
 log = logging.getLogger("routemap_engine.whereami")
@@ -33,7 +31,7 @@ class OriginUnknown(RuntimeError):
 
 async def public_ip(*, user_agent: str = geo.DEFAULT_USER_AGENT,
                     timeout: float = geo.DEFAULT_HTTP_TIMEOUT, sourceapp: str | None = None) -> str:
-    async with httpx.AsyncClient() as client:
+    async with httpclient.client() as client:
         response = await client.get(WHATS_MY_IP, timeout=timeout,
                                     params={"sourceapp": sourceapp} if sourceapp else None,
                                     headers={"User-Agent": user_agent})
@@ -71,7 +69,7 @@ async def asn_of(addr: str, *, user_agent: str = geo.DEFAULT_USER_AGENT,
                  timeout: float = geo.DEFAULT_HTTP_TIMEOUT, sourceapp: str | None = None) -> int | None:
     """The origin AS of *addr*, for picking a RIPE Atlas probe on the same network."""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpclient.client() as client:
             response = await client.get(NETWORK_INFO, params=geo._ripestat_params(addr, sourceapp),
                                         timeout=timeout, headers={"User-Agent": user_agent})
         asns = ((response.json() or {}).get("data") or {}).get("asns") or []

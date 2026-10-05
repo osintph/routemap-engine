@@ -80,7 +80,7 @@ import dns.resolver
 import dns.reversename
 import httpx
 
-from routemap_engine import hoiho, sitecodes
+from routemap_engine import clean, hoiho, httpclient, sitecodes
 from routemap_engine.cache import Cache
 from routemap_engine.logsafe import tag
 from routemap_engine.netaddr import is_private_ip
@@ -274,8 +274,8 @@ async def _ip_geolocate_one(client: httpx.AsyncClient, semaphore: asyncio.Semaph
         log.info("event=ip_geo_sentinel addr=%s lat=%s lon=%s", tag(addr), lat, lon)
         return None
     return {"lat": lat, "lon": lon,
-            "city": first.get("city") or None,
-            "cc": first.get("country") or None}
+            "city": clean.text(first.get("city")),
+            "cc": clean.country(first.get("country"))}
 
 
 def _ripestat_params(resource: str, sourceapp: str | None) -> dict:
@@ -294,7 +294,7 @@ async def ip_geolocate(addresses: list[str], *, user_agent: str = DEFAULT_USER_A
     if not wanted:
         return {}
     semaphore = asyncio.Semaphore(IP_DB_CONCURRENCY)
-    async with httpx.AsyncClient() as client:
+    async with httpclient.client() as client:
         results = await asyncio.gather(
             *[_ip_geolocate_one(client, semaphore, addr, user_agent, timeout, sourceapp)
               for addr in wanted],

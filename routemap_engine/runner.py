@@ -128,6 +128,46 @@ def icmp_status() -> tuple[bool, str]:
     return probe.available()
 
 
+# Where the system's own trace tools live, searched before PATH (RM-03).
+SYSTEM_TOOL_DIRS = ("/usr/sbin", "/usr/bin", "/sbin", "/bin")
+# Common install folders that are not system folders, after those.
+EXTRA_TOOL_DIRS = ("/usr/local/sbin", "/usr/local/bin", "/opt/homebrew/sbin", "/opt/homebrew/bin")
+
+
+def _system32() -> str:
+    """The Windows system folder, from the API rather than PATH or %SystemRoot%."""
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(260)
+        if ctypes.windll.kernel32.GetSystemDirectoryW(buf, len(buf)):
+            return buf.value
+    except (AttributeError, OSError):
+        pass
+    return os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+
+
+def tool_path(name: str) -> str | None:
+    """The absolute path of a system trace tool, never one from the current folder.
+
+    Windows: only System32's tracert.exe. shutil.which would look in the current
+    folder first and accept tracert.cmd or .bat there (PATHEXT), so it is not
+    used. macOS and Linux: the system folders, then the usual extra ones, and
+    PATH last, without its empty or relative entries."""
+    if _platform() == "windows":
+        if name != TOOL_TRACERT:
+            return None
+        path = os.path.join(_system32(), "tracert.exe")
+        return path if os.path.isfile(path) else None
+    for directory in (*SYSTEM_TOOL_DIRS, *EXTRA_TOOL_DIRS):
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    safe_path = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep)
+                                if d and os.path.isabs(d))
+    found = shutil.which(name, path=safe_path)
+    return os.path.abspath(found) if found else None
+
+
 def available_tools() -> dict[str, str]:
     """Installed, usable tools for this platform: name -> executable path
     ("built-in" for the engine's own ICMP prober)."""
@@ -137,14 +177,7 @@ def available_tools() -> dict[str, str]:
     plat = _platform()
     candidates = [TOOL_TRACERT] if plat == "windows" else [TOOL_TRACEROUTE, TOOL_MTR]
     for name in candidates:
-        path = shutil.which(name)
-        if not path and plat != "windows":
-            # Common sbin locations that are not always on a desktop PATH.
-            for directory in ("/usr/sbin", "/sbin", "/usr/local/sbin", "/opt/homebrew/sbin"):
-                probe = os.path.join(directory, name)
-                if os.access(probe, os.X_OK):
-                    path = probe
-                    break
+        path = tool_path(name)
         if not path:
             continue
         if name == TOOL_MTR and not _mtr_usable():
@@ -176,7 +209,7 @@ def pick_tool(requested: str = "auto") -> tuple[str, str]:
         if requested not in TOOLS:
             raise ValueError(f"unknown trace tool {requested!r}")
         if requested not in tools:
-            if requested == TOOL_MTR and _platform() == "macos" and shutil.which("mtr"):
+            if requested == TOOL_MTR and _platform() == "macos" and tool_path("mtr"):
                 raise TraceToolMissing(
                     "mtr needs administrator rights on macOS, so it is not used. "
                     "Choose traceroute in Settings.")

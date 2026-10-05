@@ -29,7 +29,7 @@ import time
 
 import httpx
 
-from routemap_engine import geo
+from routemap_engine import geo, httpclient
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class Baseline:
         """{"ms", "src", "dst", "msm"} or None when Atlas cannot say (``error`` says why)."""
         self.error = None
         try:
-            async with httpx.AsyncClient(transport=self._transport, timeout=self.timeout,
+            async with httpclient.client(transport=self._transport, timeout=self.timeout,
                                          headers={"User-Agent": self.user_agent}) as client:
                 src_list = await self._anchors(client, origin_cc)
                 dst_list = await self._anchors(client, dest_cc)
