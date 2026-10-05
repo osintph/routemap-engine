@@ -5,13 +5,14 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   test:
     name: ${{ matrix.os }} / py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +25,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install -e ".[dev]"
+      - name: Install (hash-checked)
+        shell: bash
+        run: |
+          python -m pip install --require-hashes -r requirements/tests.txt
+          python -m pip install --no-deps --no-build-isolation .
       - run: python -m pytest
 
   release-lock:
@@ -32,6 +37,8 @@ jobs:
     # stale or broken lock shows here and not first on a tag.
     name: release lock / ubuntu / py3.12
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +57,8 @@ jobs:
     # The built-in ICMP prober, for real, on each platform's runner.
     name: probe / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -61,7 +70,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: python -m pip install -e ".[dev]"
+      - name: Install (hash-checked)
+        shell: bash
+        run: |
+          python -m pip install --require-hashes -r requirements/tests.txt
+          python -m pip install --no-deps --no-build-isolation .
       - name: A router in network namespaces (Linux)
         if: runner.os == 'Linux'
         run: |

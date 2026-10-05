@@ -1,13 +1,17 @@
 # The Contributor Licence Agreement (CLA.md), required on every pull request.
 #
-# The bot comments on a pull request whose authors have not signed, and a
+# A pull request whose commit authors have not all signed gets a comment, and a
 # contributor signs by posting the exact sentence it gives. Signatures are kept
 # in this repository on the "cla-signatures" branch (signatures/v1/cla.json),
-# so no outside service holds them. The check this job reports, "CLA", is a
-# required status check on main, so nothing merges without a signature.
+# so no outside service holds them. The verdict is a commit status named "CLA"
+# on the pull request's head commit, a required check on main, so nothing
+# merges without a signature. The logic is .github/scripts/cla.js, run with
+# GitHub's own github-script action (the archived third-party CLA action it
+# replaces is gone, RM-04), tested in tests/node/cla.test.js.
 #
-# pull_request_target runs this workflow from main with write access; it never
-# checks out or runs the pull request's code.
+# pull_request_target runs this workflow from main with write access. It checks
+# out only main's .github/scripts, never the pull request's code, and it has no
+# right to start other workflows.
 name: CLA
 
 on:
@@ -16,34 +20,36 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, closed]
 
-permissions:
-  actions: write
-  contents: write
-  pull-requests: write
-  statuses: write
+permissions: {}
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
   cla:
-    name: CLA
-    runs-on: ubuntu-latest
+    # Not named "CLA": that name is the commit status the script sets.
+    name: CLA check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write        # the signatures file on the cla-signatures branch
+      pull-requests: write   # the comment on the pull request
+      statuses: write        # the "CLA" status on the head commit
     if: >-
       github.event_name == 'pull_request_target' ||
       (github.event.issue.pull_request &&
        (github.event.comment.body == 'recheck' ||
         github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
     steps:
-      - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path-to-document: https://github.com/osintph/routemap-engine/blob/main/CLA.md
-          path-to-signatures: signatures/v1/cla.json
-          branch: cla-signatures
-          allowlist: osintph,dependabot[bot],github-actions[bot]
-          lock-pullrequest-aftermerge: false
-          custom-notsigned-prcomment: >-
-            Thank you for your pull request. Before it can be considered, each
-            author needs to sign the [Contributor Licence Agreement](https://github.com/osintph/routemap-engine/blob/main/CLA.md)
-            once, by posting the sentence below as a comment. Please also note
-            that contributions may be declined (see CONTRIBUTING.md).
-          custom-allsigned-prcomment: All authors have signed the CLA. Thank you.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const cla = require('./.github/scripts/cla.js');
+            const verdict = await cla({ github, context,
+              documentUrl: `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CLA.md` });
+            core.info(`CLA: ${verdict}`);

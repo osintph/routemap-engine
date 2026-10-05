@@ -1,0 +1,16 @@
+# Weekly update proposals for the hash locks and every pinned action
+# (hardening 5). Each arrives as a pull request with new versions and hashes,
+# runs the tests, and needs the CLA check like any other; nothing is merged
+# without review. The locks are compiled by requirements/compile.sh.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

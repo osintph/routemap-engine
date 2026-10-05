@@ -1,0 +1,3 @@
+# pip-audit, which writes each release's CycloneDX SBOM from release.txt
+# (release.yml). Compile with requirements/compile.sh.
+pip-audit
