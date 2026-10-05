@@ -134,5 +134,8 @@ def test_release_files_get_provenance_and_an_sbom():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_cla_script():
-    result = subprocess.run(["node", "--test", "tests/node/"], cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run(
+        # The files, not the folder: older Node (as on the runners) reads a folder as a module.
+        ["node", "--test", *sorted(str(p.relative_to(ROOT)) for p in (ROOT / "tests" / "node").glob("*.test.js"))],
+        cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
