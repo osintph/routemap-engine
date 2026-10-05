@@ -50,7 +50,9 @@ def test_a_line_longer_than_any_real_hop_line_is_refused():
     " 1" + " " * 200_000 + "x",
     "traceroute to a (192.0.2.1)\n" + "  " + "1 ms " * 40_000,
     "  1.|-- " + "a " * 100_000,
-])
+# Short ids: pytest puts the test id in an environment variable, and a 200 KB
+# id is more than Linux or Windows allow when starting the subprocess.
+], ids=["tracert-banner", "hop-number", "rtt-run", "mtr-row"])
 def test_a_hostile_paste_is_refused_or_parsed_in_a_moment(text):
     code = ("import sys; from routemap_engine.parse import parse_trace, TraceParseError\n"
             "t = sys.stdin.read()\n"
