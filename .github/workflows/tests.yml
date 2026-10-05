@@ -40,9 +40,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --require-hashes -r requirements/release.txt
-      - run: python -m pip install --no-deps --no-build-isolation .
-      - run: python -m pytest -q
       - run: python -m build --no-isolation
+      - run: python -m pip install --no-deps dist/*.whl
+      - name: The installed wheel, not the checkout, is what imports
+        run: python -P -c 'import routemap_engine as e, sys; print(e.__file__); sys.exit("site-packages" not in e.__file__)'
+      - run: pytest
 
   probe:
     # The built-in ICMP prober, for real, on each platform's runner.

@@ -7,7 +7,8 @@
 #
 # Built from fixed inputs only: every action by commit, every package by hash
 # from requirements/release.txt, and the build without an isolated environment
-# (which would fetch its own, unpinned build backend).
+# (which would fetch its own, unpinned build backend). No editable install: its
+# backend hook needs packages the lock does not hold.
 name: release
 
 on:
@@ -28,13 +29,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --require-hashes -r requirements/release.txt
-      - run: python -m pip install --no-deps --no-build-isolation .
-      - run: python -m pytest
+      # The sdist and wheel, built by the locked hatchling. The tests then run
+      # against the installed wheel: the file that is published, not the tree.
+      - run: python -m build --no-isolation
+      - run: python -m pip install --no-deps dist/*.whl
+      - name: The installed wheel, not the checkout, is what imports
+        run: python -P -c 'import routemap_engine as e, sys; print(e.__file__); sys.exit("site-packages" not in e.__file__)'
+      - run: pytest
       - name: Version matches tag
         run: |
-          V="$(python -c 'from routemap_engine.__about__ import __version__ as v; print(v)')"
+          V="$(python -P -c 'from routemap_engine.__about__ import __version__ as v; print(v)')"
           test "v$V" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but version $V"; exit 1; }
-      - run: python -m build --no-isolation
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
