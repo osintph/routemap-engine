@@ -19,7 +19,10 @@ import shutil
 import subprocess
 
 import pytest
-import yaml
+
+# The release lock (requirements/release.txt) has no PyYAML; the workflow policy
+# is checked by every other test job.
+yaml = pytest.importorskip("yaml")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
