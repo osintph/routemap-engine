@@ -2,6 +2,27 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.4.2] - 2026-10-05
+
+A security fix for 0.4.1. Update from 0.4.1 to this release.
+
+### Security
+- **The 2 MB cap on API answers in 0.4.1 could be bypassed.** It counted the
+  bytes as they arrived, before decompression, so a compressed answer decoded
+  to far more than the cap: 1.31 MB of gzip read as 300 MB through
+  `httpclient.client()`. A server that answers with a compressed body could
+  exhaust the memory of the process that calls it. Every request now asks for
+  an uncompressed answer (`Accept-Encoding: identity`, whatever the caller
+  sets), and an answer that arrives compressed anyway is refused before any of
+  it is decoded (`httpclient.UnexpectedEncoding`). Uncompressed answers are
+  capped at 2 MB as before.
+
+### Changed
+- Release path: the tests and the SBOM tool install from hash locks, each
+  release file gets a build provenance attestation and the release a CycloneDX
+  SBOM, the CLA check runs through GitHub's own `actions/github-script`, and
+  every workflow job has only the permissions it needs.
+
 ## [0.4.1] - 2026-10-05
 
 Security fixes from a review of the app, the engine and the site. No change to
