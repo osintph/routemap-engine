@@ -2,6 +2,34 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.5.0] - 2026-10-09
+
+### Changed
+- **An Atlas traceroute costs 60 credits, not 30.** RIPE's traceroute formula,
+  10 * N * (int(S/1500) + 1), gives 30 with the defaults, and "a one-off
+  measurement result is twice as expensive than a periodic measurement result"
+  (<https://atlas.ripe.net/docs/getting-started/credits>). The engine asks for
+  one probe, three packets, the default size and a one-off measurement, so
+  `atlas.TRACEROUTE_CREDITS` is 60. A test now derives the cost from the
+  measurement `create()` sends.
+- **`Atlas.balance()` says why a balance is missing (breaking).** It returns
+  an `atlas.Balance` instead of `int | None`: state `"ok"` with
+  `current_balance` and RIPE's estimated daily income and expenditure;
+  `"no_permission"` when RIPE answers 401 or 403, with RIPE's own reason (the
+  key is unknown, expired, or lacks "credits read"); `"unavailable"` for a
+  network failure, a timeout or an unusable answer. It never raises. Nothing
+  in the engine called it before.
+
+### Added
+- **`geo.loss_verdict()` and a `"loss"` key in `resolve()`'s result.** Only the
+  loss measured at the destination counts as the route's loss. Hops marked as
+  ICMP rate limiting are listed by number, and a destination that never
+  answered gives "unknown", never 0%. The per-hop rule is unchanged and now
+  stated in `geo`'s docstring: loss at a hop is rate limiting when the best
+  later hop that answered shows less of it, so two rate-limiting routers on
+  one path do not hide each other.
+- `Atlas(..., transport=)` for tests.
+
 ## [0.4.2] - 2026-10-05
 
 A security fix for 0.4.1. Update from 0.4.1 to this release.
