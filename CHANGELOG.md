@@ -15,9 +15,11 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - **`Atlas.balance()` says why a balance is missing (breaking).** It returns
   an `atlas.Balance` instead of `int | None`: state `"ok"` with
   `current_balance` and RIPE's estimated daily income and expenditure;
-  `"no_permission"` when RIPE answers 401 or 403, with RIPE's own reason (the
-  key is unknown, expired, or lacks "credits read"); `"unavailable"` for a
-  network failure, a timeout or an unusable answer. It never raises. Nothing
+  `"bad_key"` when RIPE answers 401 (the key is missing, unknown or expired,
+  so it cannot schedule a measurement either); `"no_permission"` when RIPE
+  answers 403 (a valid key without "credits read"); `"unavailable"` for a
+  network failure, a timeout or an unusable answer. The refusals carry RIPE's
+  own reason. It never raises. Nothing
   in the engine called it before.
 
 ### Added
