@@ -82,3 +82,13 @@ def test_random_paths_report_only_destination_loss():
             if h["hop"] in v["rate_limited"]:
                 later = [x["loss_pct"] for x in hops[h["hop"]:] if x["addresses"] and x["loss_pct"] < 100.0]
                 assert later and min(later) < h["loss_pct"]
+
+
+def test_route_carries_the_verdict_without_changing_its_contract():
+    from routemap_engine import model
+    hops = geo.annotate([_hop(1, 0.0), _hop(2, 40.0), _hop(3, 0.0)])
+    route = model.Route(parser="traceroute", parser_label="traceroute", target="x", warnings=[],
+                        hoiho_ruleset_date=None, origin={}, hops=hops)
+    assert route.loss == geo.loss_verdict(hops)
+    assert "loss" not in route.to_dict()
+    assert model.Route.from_dict(route.to_dict()).loss == route.loss

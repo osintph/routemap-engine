@@ -70,6 +70,16 @@ class Route:
                    hops=[dict(h) for h in data.get("hops") or []])
 
     @property
+    def loss(self) -> dict:
+        """The route's loss, :func:`geo.loss_verdict` over the hops.
+
+        Computed, not stored: :meth:`to_dict` is FalconEye's contract and does
+        not carry it, and a Route rebuilt from an older export or the history
+        gets the verdict too.
+        """
+        return geo.loss_verdict(self.hops)
+
+    @property
     def placed(self) -> list[dict]:
         """Hops with a location on the map."""
         return [h for h in self.hops if h.get("lat") is not None]

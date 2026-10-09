@@ -30,6 +30,10 @@ Keep a Changelog format; this project uses Semantic Versioning.
   stated in `geo`'s docstring: loss at a hop is rate limiting when the best
   later hop that answered shows less of it, so two rate-limiting routers on
   one path do not hide each other.
+- **`Route.loss`**, the same verdict computed from the route's hops, so a
+  Route rebuilt from an older export or the history has it too.
+  `Route.to_dict()` is unchanged: it is FalconEye's API body and does not
+  carry the verdict.
 - `Atlas(..., transport=)` for tests.
 
 ## [0.4.2] - 2026-10-05
