@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.5.0] - 2026-10-09
 
+Published 2026-10-09 to PyPI and GitHub Releases.
+
 ### Changed
 - **An Atlas traceroute costs 60 credits, not 30.** RIPE's traceroute formula,
   10 * N * (int(S/1500) + 1), gives 30 with the defaults, and "a one-off
