@@ -63,6 +63,13 @@ diff.diff_routes(old_route, new_route)["summary"]
   own earlier traceroutes.
 - **Path diff** aligned by place, with a written summary.
 - **Exchange points** (`ixp`): present, off, and shipped without data.
+- **Continuous mode** (`watch`): one target probed again and again, mtr style,
+  with the built-in ICMP prober: per-hop sent, loss, last, best, average, worst
+  and jitter, plot samples, path changes over 10-cycle windows (so ECMP
+  alternation is not a change) and sleep gaps that never count as loss. One
+  cycle a second at most, 30 probes a second at most, an hour by default and 8
+  hours at most; IPv4 only. It probes from the machine it runs on, so it is
+  for the desktop app and the CLI, not for a web server.
 
 ## What is sent where
 
@@ -73,6 +80,7 @@ diff.diff_routes(old_route, new_route)["summary"]
 | IP database | public hop addresses (only those DB-IP Lite City did not place, when the caller passes it) | stat.ripe.net |
 | `ripe.RipeStat` | public addresses, prefixes, AS numbers | stat.ripe.net |
 | `baseline.Baseline` | two country codes and an anchor name | atlas.ripe.net |
+| `watch.Watch` | ICMP echo probes with rising TTL, one per hop per cycle | the target, and the routers on the way |
 
 Private, CGNAT and reserved addresses are never looked up. Each upstream has its
 own terms: CAIDA's Acceptable Use Agreement for publicly accessible datasets

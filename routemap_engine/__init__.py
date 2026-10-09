@@ -10,7 +10,7 @@ The Route Map engine. Pure Python: nothing in this package imports Qt.
 FalconEye imports this package for its Route Map tab, so anything added here
 ships to a web server as well as to the desktop app.
 """
-from routemap_engine import baseline, diff, ixp, offline, osint, ripe
+from routemap_engine import baseline, diff, ixp, offline, osint, ripe, watch
 from routemap_engine.cache import MemoryCache, NullCache, SqliteCache
 from routemap_engine.geo import OFFLINE, Sources, default_sources
 from routemap_engine.model import (Route, analyse, analyse_sync, normalise_origin,

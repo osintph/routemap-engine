@@ -42,5 +42,6 @@ include = ["routemap_engine", "tests", "README.md", "CHANGELOG.md", "LICENSE"]
 packages = ["routemap_engine"]
 
 [tool.pytest.ini_options]
+markers = ["real_pool: run continuous mode with its real thread pool"]
 testpaths = ["tests"]
 addopts = "-q"
