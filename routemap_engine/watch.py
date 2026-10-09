@@ -364,7 +364,11 @@ class Watch:
     # the loop
     def run(self) -> Session:
         dst = self.resolve(self.target)
-        ipaddress.IPv4Address(dst)          # IPv6: continuous mode needs IPv4 for now
+        try:
+            ipaddress.IPv4Address(dst)
+        except ValueError:
+            raise ValueError(f"{self.target} resolves to {dst}, an IPv6 address; continuous mode "
+                             "needs an IPv4 address for now") from None
         opts = self.options
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
         tracker = PathTracker()
