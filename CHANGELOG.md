@@ -2,7 +2,9 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
-## [0.6.0] - 2026-10-09
+## [0.6.0] - 2026-10-10
+
+Published 2026-10-10 to PyPI and GitHub Releases.
 
 ### Added
 - **Continuous mode, `routemap_engine.watch`.** `Watch(target, WatchOptions)`
