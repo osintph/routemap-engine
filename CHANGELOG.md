@@ -2,6 +2,40 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.6.0] - 2026-10-09
+
+### Added
+- **Continuous mode, `routemap_engine.watch`.** `Watch(target, WatchOptions)`
+  probes one target again and again with the built-in prober's own
+  per-platform probe function, one probe per hop per cycle, spaced evenly
+  across the interval, mtr style, and keeps per hop: sent, received, loss,
+  last, best, average, worst and jitter (population standard deviation, by
+  Welford's method). Pause, resume, stop and reset are safe from any thread.
+- **Limits that follow mtr** and cannot be set outside their range: one
+  cycle a second by default and never faster (mtr's default, and its floor
+  without root, mtr(8) and ui/mtr.c); at most 30 probes a second (what mtr
+  sends on a 30-hop path, ui/net.c calc_deltatime); a 1 s wait for each
+  reply; 5 s grace at the end (mtr's --gracetime); no deeper than 5 silent
+  hops past the last that answered (mtr(8) --max-unknown "Default is 5";
+  ui/mtr.c sets 12, the smaller value sends fewer probes); the first cycle
+  probes every hop to find the path. A session stops after an hour by
+  default and 8 hours at most.
+- **Path changes** compare a hop's answering addresses over the last 10
+  cycles with the 10 before: ECMP alternation between the same routers is
+  never a change, a new set is reported once with the cycle it began, and a
+  hop appearing, disappearing or the destination moving are changes too.
+- **Sleep and suspend** are gaps: a cycle that ran well past its schedule,
+  by wall or monotonic time, is dropped whole, counted neither as sent nor as
+  lost, and recorded with its start and end.
+- **Plot data**: a live ring of 3,600 samples per hop, raw samples for the
+  first 30 minutes and one-minute buckets for the whole session in
+  `Session.to_dict()`, with the hops, the 0.5.0 loss verdict over the
+  running figures, the changes, the gaps and the resets.
+- `watch.new_hops()` lists only the hops or addresses a placed route does not
+  have yet, so a caller geolocates once and then only what is new.
+
+IPv4 only, as the built-in prober. Continuous mode never uses RIPE Atlas.
+
 ## [0.5.0] - 2026-10-09
 
 Published 2026-10-09 to PyPI and GitHub Releases.
