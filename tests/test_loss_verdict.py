@@ -97,7 +97,17 @@ def test_route_carries_the_verdict_without_changing_its_contract():
 
 
 @pytest.mark.parametrize("loss,text", [(0.3, "0.3%"), (0.5, "0.5%"), (2.0, "2.0%"), (9.94, "9.9%"),
+                                       (9.95, "9.9%"), (9.96, "10%"), (10.0, "10%"), (10.04, "10%"),
                                        (20.0, "20%"), (66.7, "67%")])
 def test_small_destination_loss_is_never_rounded_to_zero(loss, text):
     v = _verdict([_hop(1, 0.0), _hop(2, loss)])
     assert v["text"].startswith(f"{text} loss persists") and v["loss_pct"] == loss
+
+
+def test_the_precision_never_flips_at_ten_percent():
+    """Every value that shows as ten shows as "10%", whichever side of 10 it is."""
+    for hundredths in range(990, 1011):
+        text = geo._pct(hundredths / 100)
+        assert text in {f"{hundredths / 100:.1f}%", "10%"}
+        if round(hundredths / 100, 1) >= 10:
+            assert text == "10%", (hundredths, text)

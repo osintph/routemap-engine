@@ -749,8 +749,14 @@ def annotate(located: list[dict]) -> list[dict]:
 
 
 def _pct(value: float) -> str:
-    """A loss figure as text: one decimal under 10%, so 0.5% never reads as 0%."""
-    return f"{value:.1f}%" if value < 10 else f"{value:.0f}%"
+    """A loss figure as text: one decimal under 10%, so 0.5% never reads as 0%.
+
+    The choice is made on the value rounded to one decimal, not the raw value,
+    so 9.96% and 10.0% both read "10%" and the precision never flips at the
+    boundary.
+    """
+    shown = round(value, 1)
+    return f"{shown:.1f}%" if shown < 10 else f"{value:.0f}%"
 
 
 def loss_verdict(located: list[dict]) -> dict:
