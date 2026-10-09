@@ -263,7 +263,7 @@ def test_ipv6_is_refused():
     clock = Clock()
     w = watch.Watch("example.net", probe_fn=lambda *a: probe.Reply(None, None),
                     resolve=lambda _t: "2001:db8::1", wall=clock.wall, mono=clock.mono, sleep=clock.sleep)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="needs an IPv4 address"):
         w.run()
 
 
