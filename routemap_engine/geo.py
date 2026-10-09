@@ -52,9 +52,10 @@ misinterpret, each stated rather than left as a surprising number:
 * An RTT that falls at the *next* hop means the inflated hop's reply took a
   different way back, not that the packet went somewhere and came back. Labelled
   as an asymmetric return path, and the hop is not moved on the map.
-* Loss at a middle hop with no loss after it is the router rate-limiting its own
-  ICMP replies, not packets being dropped. It is the single most common
-  misreading of a traceroute.
+* Loss at a middle hop with less loss at the best later hop is the router
+  rate-limiting its own ICMP replies, not packets being dropped. It is the
+  single most common misreading of a traceroute. Only loss that persists to the
+  destination is reported as loss for the route (:func:`loss_verdict`).
 * A tail of hops that never answer is the destination or its firewall declining
   ICMP, which is not a broken path.
 
@@ -747,6 +748,48 @@ def annotate(located: list[dict]) -> list[dict]:
     return located
 
 
+def loss_verdict(located: list[dict]) -> dict:
+    """The route's loss, read the way :func:`annotate` reads each hop.
+
+    Per hop, :func:`annotate` marks loss as ICMP rate limiting when ANY later
+    hop that answered shows less loss than this one (the best later hop, not
+    every later hop, so two rate-limiting routers on one path do not hide each
+    other). For the route, only the loss measured at the destination counts:
+    whatever is lost on the way and still missing at the end. Loss that is gone
+    by the end was a router declining to answer.
+
+    Returns ``{"loss_pct", "reached", "rate_limited", "last_hop", "text"}``:
+
+    * ``loss_pct``: loss at the destination, or None when the destination did
+      not answer (a silent tail) or the trace carries no loss figures.
+    * ``reached``: whether the last hop of the trace answered.
+    * ``rate_limited``: hop numbers marked as ICMP rate limiting.
+    * ``last_hop``: the number of the last hop that answered, or None.
+    * ``text``: one plain sentence for the summary and the exports.
+    """
+    rate_limited = [e.get("hop") for e in located if ANNOT_ICMP_LIMIT in (e.get("annotations") or [])]
+    answered = [e for e in located
+                if e.get("addresses") and e.get("loss_pct") is not None and e["loss_pct"] < 100.0]
+    last = answered[-1] if answered else None
+    reached = bool(located) and last is not None and last is located[-1]
+    loss = last.get("loss_pct") if (reached and last is not None) else None
+    limited = ""
+    if rate_limited:
+        listed = ", ".join(str(n) for n in rate_limited)
+        limited = (f" Loss shown at hop{'s' if len(rate_limited) > 1 else ''} {listed} "
+                   "is ICMP rate limiting, not real loss.")
+    if not located or last is None:
+        text = "No hop answered, so the trace says nothing about loss."
+    elif not reached:
+        text = ("The destination did not answer, so loss to it is unknown." + limited)
+    elif not loss:
+        text = "No loss to the destination." + limited
+    else:
+        text = f"{loss:.0f}% loss persists to the destination." + limited
+    return {"loss_pct": loss, "reached": reached, "rate_limited": rate_limited,
+            "last_hop": None if last is None else last.get("hop"), "text": text}
+
+
 def _add(entry: dict, label: str, detail: str) -> None:
     if label not in entry["annotations"]:
         entry["annotations"].append(label)
@@ -917,7 +960,7 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
         ip_records = {}
 
     located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin)))
-    return {"hops": located, "hoiho_ruleset_date": ruleset}
+    return {"hops": located, "hoiho_ruleset_date": ruleset, "loss": loss_verdict(located)}
 
 
 def first_located(located: list[dict]) -> tuple[float, float] | None:
