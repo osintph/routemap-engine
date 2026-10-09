@@ -19,8 +19,7 @@ Keep a Changelog format; this project uses Semantic Versioning.
   so it cannot schedule a measurement either); `"no_permission"` when RIPE
   answers 403 (a valid key without "credits read"); `"unavailable"` for a
   network failure, a timeout or an unusable answer. The refusals carry RIPE's
-  own reason. It never raises. Nothing
-  in the engine called it before.
+  own reason. It never raises. Nothing in the engine called it before.
 
 ### Added
 - **`geo.loss_verdict()` and a `"loss"` key in `resolve()`'s result.** Only the
