@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import Callable
 
 import httpx
@@ -38,7 +39,12 @@ from routemap_engine.logsafe import tag
 log = logging.getLogger("routemap_engine.atlas")
 
 BASE_URL = "https://atlas.ripe.net/api/v2"
-TRACEROUTE_CREDITS = 30
+# What one trace here costs. RIPE's formula for a traceroute result is
+# 10 * N * (int(S/1500) + 1), 30 with the defaults, and "a one-off measurement
+# result is twice as expensive than a periodic measurement result"
+# (https://atlas.ripe.net/docs/getting-started/credits). :meth:`Atlas.create`
+# asks for one probe, three packets, the default size and is_oneoff: 60.
+TRACEROUTE_CREDITS = 60
 DEFAULT_TIMEOUT_SECONDS = 150.0
 
 
@@ -49,6 +55,37 @@ class AtlasUnavailable(Exception):
         super().__init__(message)
         self.kind = kind
         self.message = message
+
+
+@dataclass(frozen=True)
+class Balance:
+    """The account's credits as RIPE reports them.
+
+    ``state`` is "ok" (the numbers are RIPE's), "no_permission" (RIPE answered
+    and refused: the key is unknown, expired, or lacks the "credits read"
+    permission; ``message`` carries RIPE's own reason) or "unavailable" (no
+    usable answer: network failure, timeout, a malformed or unexpected
+    response). Only "ok" carries numbers. Field names are those of
+    GET /api/v2/credits/ (https://atlas.ripe.net/docs/apis/rest-api-reference/
+    credits/credits_retrieve).
+    """
+
+    state: str
+    current: int | None = None
+    daily_income: int | None = None
+    daily_expenditure: int | None = None
+    message: str = ""
+
+    def after(self, cost: int = TRACEROUTE_CREDITS) -> int | None:
+        """The balance once a measurement costing *cost* has run."""
+        return None if self.current is None else self.current - cost
+
+
+def _count(value) -> int | None:
+    try:
+        return None if value is None or isinstance(value, bool) else int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def to_trace_text(result: dict) -> str:
@@ -78,7 +115,8 @@ def to_trace_text(result: dict) -> str:
 
 class Atlas:
     def __init__(self, key: str, *, user_agent: str = geo.DEFAULT_USER_AGENT,
-                 base_url: str = BASE_URL, description: str = "routemap-engine traceroute"):
+                 base_url: str = BASE_URL, description: str = "routemap-engine traceroute",
+                 transport: httpx.AsyncBaseTransport | None = None):
         if not key or not key.strip():
             raise AtlasUnavailable("auth", "No RIPE Atlas API key is set. Add one in Settings.")
         self.key = key.strip()
@@ -86,12 +124,14 @@ class Atlas:
         self.base_url = base_url.rstrip("/")
         # Published by RIPE with the measurement, so it names the tool, not the user.
         self.description = description
+        self._transport = transport
 
     def _client(self, authenticated: bool = True) -> httpx.AsyncClient:
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
         if authenticated:
             headers["Authorization"] = f"Key {self.key}"
-        return httpclient.client(base_url=self.base_url, headers=headers, timeout=20.0)
+        extra = {} if self._transport is None else {"transport": self._transport}
+        return httpclient.client(base_url=self.base_url, headers=headers, timeout=20.0, **extra)
 
     async def probes(self, params: dict) -> list[dict]:
         # Probe lists are public; the key is not sent where it is not needed.
@@ -135,15 +175,34 @@ class Atlas:
             candidates.sort(key=lambda p: (p["distance_km"] is None, p["distance_km"] or 0.0))
         return candidates[0]
 
-    async def balance(self) -> int | None:
+    async def balance(self) -> Balance:
+        """The account's credits. Never raises: a source that fails tells the
+        caller which way it failed and contributes nothing else."""
         try:
             async with self._client() as client:
-                response = await client.get("/credits/")
-            if response.status_code != 200:
-                return None
-            return int((response.json() or {}).get("current_balance"))
+                response = await asyncio.wait_for(client.get("/credits/"), timeout=20.0)
+        except Exception as exc:  # noqa: BLE001 - a budget run out is "unavailable"
+            log.warning("event=atlas_balance_failed error=%s", type(exc).__name__)
+            return Balance("unavailable", message="RIPE Atlas did not answer.")
+        if response.status_code in (401, 403):
+            detail = ""
+            try:
+                detail = str(((response.json() or {}).get("error") or {}).get("detail") or "")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            return Balance("no_permission", message=detail or "RIPE Atlas refused to show the balance.")
+        if response.status_code != 200:
+            return Balance("unavailable", message=f"RIPE Atlas answered HTTP {response.status_code}.")
+        try:
+            body = response.json() or {}
         except Exception:  # noqa: BLE001
-            return None
+            body = None
+        current = _count(body.get("current_balance")) if isinstance(body, dict) else None
+        if current is None:
+            return Balance("unavailable", message="RIPE Atlas sent no balance.")
+        return Balance("ok", current=current,
+                       daily_income=_count(body.get("estimated_daily_income")),
+                       daily_expenditure=_count(body.get("estimated_daily_expenditure")))
 
     async def create(self, target: str, probe_id: int, af: int = 4) -> int:
         body = {
