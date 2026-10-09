@@ -7,6 +7,8 @@ limiting.
 """
 import random
 
+import pytest
+
 from routemap_engine import geo
 
 
@@ -92,3 +94,10 @@ def test_route_carries_the_verdict_without_changing_its_contract():
     assert route.loss == geo.loss_verdict(hops)
     assert "loss" not in route.to_dict()
     assert model.Route.from_dict(route.to_dict()).loss == route.loss
+
+
+@pytest.mark.parametrize("loss,text", [(0.3, "0.3%"), (0.5, "0.5%"), (2.0, "2.0%"), (9.94, "9.9%"),
+                                       (20.0, "20%"), (66.7, "67%")])
+def test_small_destination_loss_is_never_rounded_to_zero(loss, text):
+    v = _verdict([_hop(1, 0.0), _hop(2, loss)])
+    assert v["text"].startswith(f"{text} loss persists") and v["loss_pct"] == loss
