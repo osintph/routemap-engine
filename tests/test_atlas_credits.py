@@ -64,18 +64,28 @@ def test_balance_ok_carries_ripes_numbers():
     assert b.after() == 1234 - atlas.TRACEROUTE_CREDITS
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_refusal_is_no_permission_with_ripes_reason(status):
-    b = _balance(httpx.Response(status, json={"error": {"detail": "The provided API key does not exist",
-                                                        "status": status}}))
-    assert b.state == "no_permission" and b.current is None
+REFUSALS = [(401, "bad_key"), (403, "no_permission")]
+
+
+def test_an_unknown_key_is_bad_key_with_ripes_reason():
+    # The body RIPE sent for an unknown key, recorded 2026-10-09.
+    b = _balance(httpx.Response(401, json={"error": {"detail": "The provided API key does not exist",
+                                                     "status": 401, "title": "Unauthorized", "code": 104}}))
+    assert b.state == "bad_key" and b.current is None
     assert "does not exist" in b.message
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_refusal_without_a_body_is_still_no_permission(status):
+def test_a_key_without_credits_read_is_no_permission():
+    # Not yet recorded from RIPE: the shape follows the 401 above.
+    b = _balance(httpx.Response(403, json={"error": {"detail": "You do not have permission",
+                                                     "status": 403}}))
+    assert b.state == "no_permission" and b.current is None and b.message
+
+
+@pytest.mark.parametrize("status,state", REFUSALS)
+def test_refusal_without_a_body_keeps_its_state(status, state):
     b = _balance(httpx.Response(status, text="nope"))
-    assert b.state == "no_permission" and b.message
+    assert b.state == state and b.message
 
 
 @pytest.mark.parametrize("exc", [httpx.ConnectError("x"), httpx.ReadTimeout("x"),

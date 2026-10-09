@@ -61,11 +61,17 @@ class AtlasUnavailable(Exception):
 class Balance:
     """The account's credits as RIPE reports them.
 
-    ``state`` is "ok" (the numbers are RIPE's), "no_permission" (RIPE answered
-    and refused: the key is unknown, expired, or lacks the "credits read"
-    permission; ``message`` carries RIPE's own reason) or "unavailable" (no
-    usable answer: network failure, timeout, a malformed or unexpected
-    response). Only "ok" carries numbers. Field names are those of
+    ``state`` is one of:
+
+    * "ok": the numbers are RIPE's.
+    * "bad_key": RIPE answered 401. The key is missing, unknown or expired,
+      so it cannot schedule a measurement either.
+    * "no_permission": RIPE answered 403. The key is valid but lacks the
+      "credits read" permission; a measurement may still be allowed.
+    * "unavailable": no usable answer (network failure, timeout, a malformed
+      or unexpected response).
+
+    ``message`` carries RIPE's own reason for "bad_key" and "no_permission". Only "ok" carries numbers. Field names are those of
     GET /api/v2/credits/ (https://atlas.ripe.net/docs/apis/rest-api-reference/
     credits/credits_retrieve).
     """
@@ -190,6 +196,8 @@ class Atlas:
                 detail = str(((response.json() or {}).get("error") or {}).get("detail") or "")[:200]
             except Exception:  # noqa: BLE001
                 pass
+            if response.status_code == 401:
+                return Balance("bad_key", message=detail or "RIPE Atlas did not accept the key.")
             return Balance("no_permission", message=detail or "RIPE Atlas refused to show the balance.")
         if response.status_code != 200:
             return Balance("unavailable", message=f"RIPE Atlas answered HTTP {response.status_code}.")
