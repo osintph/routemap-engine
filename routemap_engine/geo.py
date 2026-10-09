@@ -748,6 +748,11 @@ def annotate(located: list[dict]) -> list[dict]:
     return located
 
 
+def _pct(value: float) -> str:
+    """A loss figure as text: one decimal under 10%, so 0.5% never reads as 0%."""
+    return f"{value:.1f}%" if value < 10 else f"{value:.0f}%"
+
+
 def loss_verdict(located: list[dict]) -> dict:
     """The route's loss, read the way :func:`annotate` reads each hop.
 
@@ -785,7 +790,7 @@ def loss_verdict(located: list[dict]) -> dict:
     elif not loss:
         text = "No loss to the destination." + limited
     else:
-        text = f"{loss:.0f}% loss persists to the destination." + limited
+        text = f"{_pct(loss)} loss persists to the destination." + limited
     return {"loss_pct": loss, "reached": reached, "rate_limited": rate_limited,
             "last_hop": None if last is None else last.get("hop"), "text": text}
 

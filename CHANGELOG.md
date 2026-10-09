@@ -34,6 +34,11 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - `watch.new_hops()` lists only the hops or addresses a placed route does not
   have yet, so a caller geolocates once and then only what is new.
 
+### Changed
+- **Small destination loss is no longer rounded to 0%.** `loss_verdict`'s
+  sentence gives one decimal under 10% ("0.5% loss persists to the
+  destination"), whole percent above. `loss_pct` is unchanged.
+
 IPv4 only, as the built-in prober. Continuous mode never uses RIPE Atlas.
 
 ## [0.5.0] - 2026-10-09
