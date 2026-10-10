@@ -52,7 +52,11 @@ BASE_URL = "https://atlas.ripe.net/api/v2"
 # (https://atlas.ripe.net/docs/getting-started/credits). :meth:`Atlas.create`
 # asks for one probe, three packets, the default size and is_oneoff: 60.
 TRACEROUTE_CREDITS = 60
-DEFAULT_TIMEOUT_SECONDS = 150.0
+# How long to wait for a one-off traceroute's result. RIPE waits 4,000 ms per
+# packet (response_timeout's default, POST /measurements/ schema), 3 packets a
+# hop, up to 30 hops, so a path whose routers stay silent can take about
+# 360 s; measurement 221303797 took 141 s, close to the 150 s this was.
+DEFAULT_TIMEOUT_SECONDS = 420.0
 # RIPE's schema for a traceroute definition (the POST /measurements/ reference
 # at atlas.ripe.net/docs, read 10 Oct 2026): "paris" is 0 to 64, default 16,
 # "The number of paris traceroute variations to try. Zero disables paris
@@ -60,6 +64,27 @@ DEFAULT_TIMEOUT_SECONDS = 150.0
 # so a reverse trace costs the same 60.
 REVERSE_PARIS = 16
 REVERSE_DESCRIPTION = "routemap-engine reverse traceroute"
+# How far a probe may be from its published position, for the physics check:
+# RIPE asks hosts to set it "roughly correct" (a neighbourhood will do) and
+# adds an obfuscation "with a certain maximum distance added, which may not be
+# precisely 1km" (RIPE NCC, ripe-atlas list, March 2021). The 300 km of
+# geo.SLACK_KM is for an origin guessed from a public IP; a probe's own
+# position is much better than that: about a kilometre of obfuscation and a
+# few for a host who set the neighbourhood. Measurement 221303797: hop 1
+# answered in 0.406 ms, which allows 40.6 km, and the IP database placed it
+# 48.3 km from the probe; with 300 km of slack that passed, and any slack over
+# 7.7 km would still pass it. The cost of a small slack: a host who set only
+# the city can see hops near the probe left unplaced (with the reason), never
+# placed somewhere the round trip cannot reach.
+PROBE_SLACK_KM = 5.0
+# The TTL Atlas uses for its last probe after a run of silent hops; RIPE's
+# results page numbers that answer as the hop after the last one sent
+# (measurement 221303797: hops 1 to 21, then 255, shown as hop 22).
+FINAL_PROBE_TTL = 255
+ANNOT_FINAL_PROBE = "answered the final TTL 255 probe"
+FINAL_PROBE_DETAIL = ("RIPE Atlas sends one last probe with TTL 255 after a run of silent hops; this "
+                      "answer came from it, so it is numbered after the last hop sent and the hops in "
+                      "between are unknown.")
 
 
 class AtlasUnavailable(Exception):
@@ -108,15 +133,45 @@ def _count(value) -> int | None:
         return None
 
 
+def final_probe(result: dict) -> int | None:
+    """The hop number the answer to Atlas's final TTL 255 probe gets (the hop
+    after the last one sent, as RIPE's results page numbers it), or None when
+    the result has no such answer."""
+    numbers = [h.get("hop") for h in result.get("result") or [] if isinstance(h.get("hop"), int)]
+    if not numbers or numbers[-1] != FINAL_PROBE_TTL:
+        return None
+    sent = [n for n in numbers[:-1] if n < FINAL_PROBE_TTL]
+    return (max(sent) if sent else 0) + 1
+
+
+def mark_final_probe(route, number: int | None) -> None:
+    """Annotate hop *number* of *route* (a Route or its dict) as the answer to
+    the final TTL 255 probe, so the table, the map, the PDF and the JSON say
+    why its number follows a gap."""
+    if number is None:
+        return
+    hops = route.hops if hasattr(route, "hops") else (route.get("hops") or [])
+    for hop in hops:
+        if hop.get("hop") == number:
+            if ANNOT_FINAL_PROBE not in hop.setdefault("annotations", []):
+                hop["annotations"].append(ANNOT_FINAL_PROBE)
+                hop.setdefault("annotation_details", []).append(f"{ANNOT_FINAL_PROBE}: {FINAL_PROBE_DETAIL}")
+
+
 def to_trace_text(result: dict) -> str:
-    """Render one Atlas traceroute result as Unix traceroute output."""
+    """Render one Atlas traceroute result as Unix traceroute output. The answer
+    to the final TTL 255 probe is numbered as the hop after the last one sent
+    (:func:`final_probe`), as RIPE's own results page does."""
     target = result.get("dst_name") or result.get("dst_addr") or "target"
     dst = result.get("dst_addr") or ""
+    final = final_probe(result)
     lines = [f"traceroute to {target} ({dst}), 30 hops max, 60 byte packets"]
     for hop in result.get("result") or []:
         number = hop.get("hop")
         if number is None:
             continue
+        if final is not None and number == FINAL_PROBE_TTL:
+            number = final
         parts = []
         for probe in hop.get("result") or []:
             if "x" in probe:
@@ -337,6 +392,12 @@ class Atlas:
     async def wait(self, measurement_id: int, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                    on_wait: Callable[[float], None] | None = None) -> str:
         """Poll until the measurement has a result; return it as trace text."""
+        return to_trace_text(await self.wait_result(measurement_id, timeout, on_wait))
+
+    async def wait_result(self, measurement_id: int, timeout: float = DEFAULT_TIMEOUT_SECONDS,
+                          on_wait: Callable[[float], None] | None = None) -> dict:
+        """Poll until the measurement has a result; return RIPE's result object
+        (for :func:`to_trace_text` and :func:`final_probe`)."""
         deadline = time.monotonic() + timeout
         started = time.monotonic()
         delay = 3.0
@@ -355,5 +416,5 @@ class Atlas:
                 except Exception:  # noqa: BLE001
                     continue
                 if results:
-                    return to_trace_text(results[0])
+                    return results[0]
         raise AtlasUnavailable("failed", "The Atlas measurement did not return a result in time.")

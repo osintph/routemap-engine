@@ -68,16 +68,21 @@ async def main(target: str) -> int:
     except atlas.AtlasUnavailable as exc:
         print(f"RIPE Atlas refused it ({exc.kind}): {exc.message}")
         return 3
-    print(f"Measurement {msm}: https://atlas.ripe.net/measurements/{msm}/  (waiting, usually 30 to 90 s)")
-    text = await client.wait(msm, on_wait=lambda t: print(f"  waiting {t:.0f} s", flush=True))
+    print(f"Measurement {msm}: https://atlas.ripe.net/measurements/{msm}/")
+    print("  Waiting: usually 1 to 3 minutes, longer when routers on the way back do not answer "
+          "(RIPE waits 4 s for each of 3 packets at a silent hop).")
+    result = await client.wait_result(msm, on_wait=lambda t: print(f"  waiting {t:.0f} s", flush=True))
+    text = atlas.to_trace_text(result)
     print(text)
     origin = (chosen["lat"], chosen["lon"]) if chosen.get("lat") is not None else None
-    route = await analyse(text, origin)
-    print(f"{'#':>3}  {'address':<40} {'place':<28} {'source':<10} {'min ms':>8}")
+    route = await analyse(text, origin, origin_slack_km=atlas.PROBE_SLACK_KM)
+    atlas.mark_final_probe(route, atlas.final_probe(result))
+    print(f"{'#':>3}  {'address':<40} {'hostname':<34} {'place':<24} {'source':<10} {'min ms':>8}  notes")
     for h in route.hops:
         rtt = h.get("min_rtt_ms")
-        print(f"{h['hop']:>3}  {h.get('address') or '*':<40} {(h.get('place') or '')[:28]:<28} "
-              f"{h.get('source') or '':<10} {'' if rtt is None else f'{rtt:.1f}':>8}")
+        print(f"{h['hop']:>3}  {h.get('address') or '*':<40} {(h.get('hostname') or '')[:34]:<34} "
+              f"{(h.get('place') or '')[:24]:<24} {h.get('source') or '':<10} "
+              f"{'' if rtt is None else f'{rtt:.1f}':>8}  {', '.join(h.get('annotations') or [])}")
     return 0
 
 

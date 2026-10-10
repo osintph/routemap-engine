@@ -188,13 +188,16 @@ def is_sentinel(lat: float, lon: float) -> bool:
                for s_lat, s_lon in _SENTINEL_COORDS)
 
 
-def max_distance_km(min_rtt_ms: float) -> float:
-    """The furthest a hop answering in *min_rtt_ms* can be from the origin."""
-    return max(0.0, float(min_rtt_ms)) * KM_PER_MS_ROUND_TRIP + SLACK_KM
+def max_distance_km(min_rtt_ms: float, slack_km: float = SLACK_KM) -> float:
+    """The furthest a hop answering in *min_rtt_ms* can be from the origin,
+    *slack_km* being how far the origin itself may be from where it is said
+    to be (SLACK_KM for a city from a public IP; less for a RIPE Atlas probe,
+    see atlas.PROBE_SLACK_KM)."""
+    return max(0.0, float(min_rtt_ms)) * KM_PER_MS_ROUND_TRIP + slack_km
 
 
 def rtt_allows(origin: tuple[float, float] | None, lat: float, lon: float,
-               min_rtt_ms: float | None) -> tuple[bool, float | None, float | None]:
+               min_rtt_ms: float | None, slack_km: float = SLACK_KM) -> tuple[bool, float | None, float | None]:
     """Whether a location is reachable inside the measured RTT.
 
     Returns ``(allowed, distance_km, budget_km)``. Unknowable cases allow:
@@ -206,7 +209,7 @@ def rtt_allows(origin: tuple[float, float] | None, lat: float, lon: float,
     if origin is None or min_rtt_ms is None:
         return True, None, None
     distance = haversine_km(origin[0], origin[1], lat, lon)
-    budget = max_distance_km(min_rtt_ms)
+    budget = max_distance_km(min_rtt_ms, slack_km)
     return distance <= budget, round(distance, 1), round(budget, 1)
 
 
@@ -418,7 +421,7 @@ def _reject_reason(distance: float | None, budget: float | None) -> str:
 
 
 def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
-                origin: tuple[float, float] | None) -> list[dict]:
+                origin: tuple[float, float] | None, slack_km: float = SLACK_KM) -> list[dict]:
     """Resolve every hop to a location, source and set of annotations.
 
     Pure: every upstream answer is passed in, so this is the function the tests
@@ -466,7 +469,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                 })
                 continue
             lat, lon = record["lat"], record["lng"]
-            allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms)
+            allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms, slack_km)
             candidate = {"source": SOURCE_HOIHO, "hostname": hostname,
                          "place": _hoiho_place(record), "lat": lat, "lon": lon,
                          "distance_km": distance, "rtt_budget_km": budget,
@@ -506,7 +509,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                 if not record:
                     continue
                 lat, lon = record["lat"], record["lon"]
-                allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms)
+                allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms, slack_km)
                 candidate = {"source": SOURCE_SITE_CODE, "hostname": hostname,
                              "place": record["place"], "lat": lat, "lon": lon,
                              "distance_km": distance, "rtt_budget_km": budget,
@@ -538,7 +541,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                     })
                     continue
                 lat, lon = record["lat"], record["lon"]
-                allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms)
+                allowed, distance, budget = rtt_allows(origin, lat, lon, hop.min_rtt_ms, slack_km)
                 provider = record.get("provider") or "ripestat"
                 candidate = {"source": SOURCE_IP_DB, "address": addr,
                              "place": _ip_place(record), "lat": lat, "lon": lon,
@@ -901,7 +904,7 @@ async def _within(budget: float, coro, label: str, fallback,
 
 async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
                   sources: Sources | None = None,
-                  progress: ProgressFn | None = None) -> dict:
+                  progress: ProgressFn | None = None, slack_km: float = SLACK_KM) -> dict:
     """Locate and annotate a parsed trace.
 
     Hoiho and the IP database are asked concurrently for everything that could
@@ -915,7 +918,7 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
     run that contacts nothing.
     """
     hoiho_records, ruleset, ip_records, _names = await gather_records(hops, sources, progress)
-    located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin)))
+    located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin, slack_km)))
     return {"hops": located, "hoiho_ruleset_date": ruleset, "loss": loss_verdict(located)}
 
 
