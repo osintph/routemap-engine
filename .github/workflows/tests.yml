@@ -95,11 +95,20 @@ jobs:
           echo "ROUTEMAP_PROBE_ROUTER=10.77.0.2" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_MIN_HOPS=2" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS=4" >> "$GITHUB_ENV"
+      - name: A per-flow load balancer in network namespaces (Linux; path discovery, IPv4 and IPv6)
+        if: runner.os == 'Linux'
+        run: |
+          bash tests/helpers/paths_lab.sh
+          echo "ROUTEMAP_PATHS_LAB=1" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_TARGET6=fd78:9::9" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_HOPS6=3" >> "$GITHUB_ENV"
       - name: The internet (macOS)
         if: runner.os == 'macOS'
         run: |
           echo "ROUTEMAP_PROBE_TARGET=heise.de" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_MIN_HOPS=5" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PATHS_TARGET=heise.de" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
       - name: Loopback (Windows; the runner's network drops ICMP)
         if: runner.os == 'Windows'
         shell: bash
@@ -107,4 +116,5 @@ jobs:
           echo "ROUTEMAP_PROBE_TARGET=127.0.0.1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_MIN_HOPS=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
-      - run: python -m pytest -q -s tests/test_probe.py
+          echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
+      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py
