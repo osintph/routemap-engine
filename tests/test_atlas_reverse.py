@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from routemap_engine import atlas
-from tests.test_atlas_credits import _ripe_cost
+from test_atlas_credits import _ripe_cost
 
 DEST = (52.37, 9.73)        # Hannover, where heise.de is located
 
