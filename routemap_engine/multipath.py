@@ -23,6 +23,10 @@ METHOD
   path, so a path's loss and latency are measured, not stitched together.
   This spends more probes than the MDA on single-path stretches; the caps
   below bound it.
+* **Rate-limited routers.** A hop that answers less than half of its probes
+  gets no more flows once a round of them showed no new responder: the
+  stopping rule assumes every probe is answered, and more flows there would
+  only spend the budget on silence.
 * **Per-packet balancing.** When a hop shows a second responder, one flow is
   probed there five more times (the MDA's test: six probes of one flow that
   all return the same interface rule out per-packet balancing at 95%). If
@@ -340,6 +344,7 @@ class Discoverer:
                     break
                 want = max(m, n_k(1))
                 per_packet_checked = False
+                last_k = -1
                 while True:
                     if want > m:
                         new = range(m, want)
@@ -360,6 +365,13 @@ class Discoverer:
                     need = n_k(k)
                     if answered >= need or m >= MAX_FLOWS:
                         break
+                    # A router that answers less than half of its probes is
+                    # rate limiting; more flows only buy more silence there, so
+                    # growth stops once a round brought no new responder.
+                    probed = sum(1 for r in at_hop if r is not None)
+                    if answered * 2 < probed and k == last_k:
+                        break
+                    last_k = k
                     want = min(MAX_FLOWS, m + (need - answered))
                 self._progress(ttl)
                 alive = [f for f in range(m) if self._alive(f, ttl + 1)]

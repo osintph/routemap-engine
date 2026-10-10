@@ -159,3 +159,23 @@ def test_the_trace_text_lists_every_responder_and_parses_back():
     d.rtts[(1, "192.0.2.1")] = [1.0]
     hop = parse_trace(d.trace_text()).hops[1]
     assert set(hop.addresses) == {"192.0.2.21", "192.0.2.22"}
+
+
+def test_a_rate_limiting_router_does_not_make_the_discovery_add_flows_for_nothing():
+    """Measured to heise.de (10 Oct 2026): a router answering about 1 probe in
+    3 drew 25 flows on a single path. Over 200 hash seeds at that rate and
+    worse, a single-path discovery never needs more than two growth rounds
+    (17 flows); before the fix it reached 38 at 67% silence and 64 at 80%."""
+    for loss in (0.67, 0.8):
+        worst = max(run(["r1", "r2", "rl3", "r4", DST], seed=seed, loss={"rl3": loss},
+                        options=multipath.Options(pings=0))[0].flows_used for seed in range(200))
+        assert worst <= 17, (loss, worst)
+
+
+def test_a_rate_limiting_balancer_still_shows_both_branches_most_of_the_time():
+    """The price of the rule above, kept visible: with both branches answering
+    a third of their probes, both are still found in at least 90% of runs."""
+    found = sum(set(run(["r1", ("flow", ["a", "b"]), "r3", DST], seed=seed, loss={"a": 0.67, "b": 0.67},
+                        options=multipath.Options(pings=0))[0].responders.get(2, [])) == {"a", "b"}
+                for seed in range(200))
+    assert found >= 180, found
