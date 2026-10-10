@@ -89,3 +89,29 @@ def test_a_probe_position_rejects_what_its_round_trip_cannot_reach():
 @pytest.mark.parametrize("slack", [atlas.PROBE_SLACK_KM, geo.SLACK_KM])
 def test_the_allowance_is_the_only_difference(slack):
     assert geo.max_distance_km(0.406, slack) == pytest.approx(40.6 + slack)
+
+
+OVH_NAMES = {"94.23.122.136": "be101.sbg-g1-nc5.fr.eu", "91.121.215.221": "be102.mil-ava1-sbb2-nc5.it.eu",
+             "57.128.121.192": "mil-ava1-sbb1-8k.it.eu", "57.128.234.60": "be102.mrs-mrs1-sbb1-8k.fr.eu",
+             "103.5.15.5": "sin1-sgcs2-g1-nc5.sgp.asia"}
+
+
+def test_ovh_hops_are_placed_by_ovhs_own_site_names_and_pass_the_round_trip_check():
+    """The release check placed OVH's backbone by the IP database in London,
+    Warsaw and Hong Kong; OVH's own router names (its weathermap) put them in
+    Strasbourg, Milan, Marseille and Singapore, and each placement is inside
+    what its round trip allows from probe 7036."""
+    async def ptr(addresses):
+        return {a: OVH_NAMES[a] for a in addresses if a in OVH_NAMES}
+
+    async def ip_db(addresses):
+        wrong = {"94.23.122.136": (51.5, -0.12), "91.121.215.221": (51.51, -0.09), "57.128.234.60": (52.23, 21.01)}
+        return {a: {"lat": p[0], "lon": p[1], "city": "x", "cc": "GB"} for a, p in wrong.items() if a in addresses}
+    route = asyncio.run(analyse(atlas.to_trace_text(RESULT), ORIGIN, origin_slack_km=atlas.PROBE_SLACK_KM,
+                                sources=Sources(hoiho=None, ip_db=ip_db, ptr=ptr)))
+    by_hop = {h["hop"]: h for h in route.hops}
+    expected = {11: "Strasbourg", 12: "Milan", 13: "Milan", 14: "Marseille", 16: "Singapore"}
+    for hop, city in expected.items():
+        h = by_hop[hop]
+        assert h["source"] == "site-code" and h["place"].startswith(city), h
+        assert h["distance_km"] <= h["rtt_budget_km"], h

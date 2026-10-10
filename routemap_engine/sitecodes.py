@@ -69,6 +69,19 @@ CARRIERS = {
         # "hnk-b4-link" -> "hnk", "ffm-bb2-link" -> "ffm".
         "code_of": lambda label: label.split("-", 1)[0],
     },
+    "ovh": {
+        "name": "OVHcloud (AS16276)",
+        # OVH's backbone routers answer reverse DNS under these zones, seen in a
+        # real trace (RIPE Atlas measurement 221303797, 11 Oct 2026):
+        # be101.sbg-g1-nc5.fr.eu, mil-ava1-sbb1-8k.it.eu,
+        # sin1-sgcs2-g1-nc5.sgp.asia. Only zones seen in a real trace are
+        # listed; another country's zone is added when one is seen.
+        "suffixes": (".fr.eu", ".it.eu", ".sgp.asia"),
+        "exclude": (),
+        # "be101.sbg-g1-nc5" leaves "sbg-g1-nc5" as the label; the site code is
+        # the router name's first part ("sbg", "sin1").
+        "code_of": lambda label: label.split("-", 1)[0] if "-" in label else "",
+    },
 }
 
 _lock = threading.Lock()
@@ -157,7 +170,7 @@ def lookup(hostname: str) -> dict | None:
         if not label:
             continue
         code = spec["code_of"](label)
-        if not re.fullmatch(r"[a-z]{2,6}", code or ""):
+        if not re.fullmatch(r"[a-z][a-z0-9]{1,5}", code or ""):
             continue
         entry = table().get((carrier_id, code))
         if not entry:

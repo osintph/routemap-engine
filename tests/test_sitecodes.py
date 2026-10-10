@@ -33,7 +33,9 @@ def test_every_row_is_well_formed_and_cites_a_source():
         assert len(parts) == 7, f"malformed row: {line!r}"
         carrier, code, city, cc, lat, lon, source_ref = parts
         assert carrier in sitecodes.CARRIERS, f"row for unknown carrier {carrier!r}"
-        assert re.fullmatch(r"[a-z]{2,6}", code), f"implausible site code {code!r}"
+        # Letters, then letters or digits (OVH's metro codes: "sin1", "bom1"),
+        # the same rule sitecodes.lookup applies.
+        assert re.fullmatch(r"[a-z][a-z0-9]{1,5}", code), f"implausible site code {code!r}"
         assert city.strip(), f"row {code!r} has no city"
         assert re.fullmatch(r"[A-Z]{2}", cc), f"row {code!r} has no country code"
         assert -90 <= float(lat) <= 90 and -180 <= float(lon) <= 180
@@ -83,6 +85,32 @@ def test_arelion_backbone_hostnames_resolve(hostname, city):
 
 def test_case_and_trailing_dot_do_not_matter():
     assert sitecodes.lookup("HNK-B4-Link.IP.Twelve99.NET.") is not None
+
+
+@pytest.mark.parametrize("hostname,city", [
+    # OVH's backbone, as reverse DNS named it in RIPE Atlas measurement
+    # 221303797; the cities are OVH's own weathermap labels for these sites.
+    ("be101.sbg-g1-nc5.fr.eu", "Strasbourg"),
+    ("be102.mil-ava1-sbb2-nc5.it.eu", "Milan"),
+    ("mil-ava1-sbb1-8k.it.eu", "Milan"),
+    ("be102.mrs-mrs1-sbb1-8k.fr.eu", "Marseille"),
+    ("sin1-sgcs2-g1-nc5.sgp.asia", "Singapore"),
+])
+def test_ovh_backbone_hostnames_resolve(hostname, city):
+    record = sitecodes.lookup(hostname)
+    assert record is not None and record["place"].startswith(city), record
+    assert record["carrier"] == "OVHcloud (AS16276)" and record["source_ref"] == "ovh-weathermap"
+
+
+@pytest.mark.parametrize("hostname", [
+    "sbg-g1-nc5.example.com",          # OVH's naming outside OVH's zones proves nothing
+    "relaxed.fr.eu",                   # no router name shape
+    "www.fr.eu",
+    "foo-bar1.fr.eu",                  # not a site OVH publishes
+    "be101.sbg-g1-nc5.de.eu",          # a zone not seen in a real trace yet
+])
+def test_ovh_names_outside_its_rule_do_not_resolve(hostname):
+    assert sitecodes.lookup(hostname) is None, hostname
 
 
 # ---------- what must NOT resolve ----------

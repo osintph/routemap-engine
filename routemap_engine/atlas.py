@@ -64,6 +64,13 @@ DEFAULT_TIMEOUT_SECONDS = 420.0
 # so a reverse trace costs the same 60.
 REVERSE_PARIS = 16
 REVERSE_DESCRIPTION = "routemap-engine reverse traceroute"
+# How long the probe waits for each reply on a reverse trace, in ms. RIPE's
+# schema: response_timeout 1 to 60,000, default 4,000 ("Response timeout for
+# one packet"). A silent hop costs 3 packets times this, so 2,000 halves the
+# wait on a path whose routers do not answer (measurement 221303797: 10 silent
+# hops, about 120 s at 4,000) and is still more than 6 times its slowest reply
+# (300 ms). A reply slower than 2 s is counted as silent. No effect on cost.
+REVERSE_RESPONSE_TIMEOUT_MS = 2000
 # How far a probe may be from its published position, for the physics check:
 # RIPE asks hosts to set it "roughly correct" (a neighbourhood will do) and
 # adds an obfuscation "with a certain maximum distance added, which may not be
@@ -326,10 +333,11 @@ class Atlas:
             raise AtlasUnavailable("failed", "That is not a public address, so RIPE Atlas cannot trace to it.")
         af = 6 if ":" in public_ip else 4
         return await self.create(public_ip, probe_id, af, paris=REVERSE_PARIS, description=REVERSE_DESCRIPTION,
-                                 resolve_on_probe=False)
+                                 resolve_on_probe=False, response_timeout=REVERSE_RESPONSE_TIMEOUT_MS)
 
     async def create(self, target: str, probe_id: int, af: int = 4, *, paris: int = 0,
-                     description: str | None = None, resolve_on_probe: bool = True) -> int:
+                     description: str | None = None, resolve_on_probe: bool = True,
+                     response_timeout: int | None = None) -> int:
         body = {
             "definitions": [{
                 "type": "traceroute", "af": af, "target": target,
@@ -340,6 +348,8 @@ class Atlas:
             "probes": [{"type": "probes", "value": str(probe_id), "requested": 1}],
             "is_oneoff": True,
         }
+        if response_timeout is not None:
+            body["definitions"][0]["response_timeout"] = max(1, min(60_000, int(response_timeout)))
         async with self._client() as client:
             response = await client.post("/measurements/", json=body)
         if response.status_code in (200, 201):
