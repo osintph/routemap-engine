@@ -54,6 +54,9 @@ async def main(target: str) -> int:
     print(f"Probe #{chosen['id']} AS{chosen.get('asn')} {chosen.get('country')}, "
           f"{chosen.get('distance_km')} km from the target's located position")
     print(f"Balance: {balance.state}" + (f", {balance.current:,} credits" if balance.current is not None else ""))
+    if balance.state == "bad_key":
+        print(f"RIPE Atlas did not accept the key ({balance.message}). Nothing scheduled.")
+        return 4
     print()
     print("RIPE Atlas measurements are public. This one would publish your public IP address,")
     print(f"{me}, as its target, and cost {atlas.TRACEROUTE_CREDITS} credits. Route Map cannot remove it afterwards.")
