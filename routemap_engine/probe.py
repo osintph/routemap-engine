@@ -14,17 +14,38 @@ probes per hop, one second per reply, and records every responder.
 
 HOW, PER PLATFORM
 -----------------
-* Windows: ``IcmpSendEcho`` from iphlpapi.dll, the API ``tracert`` itself
-  uses, with the TTL set per probe. No raw socket, no administrator rights.
-  IPv4 only; an IPv6 target falls back to ``tracert``.
+* Windows: ``IcmpSendEcho`` (IPv4) and ``Icmp6SendEcho2`` (IPv6) from
+  iphlpapi.dll, the API ``tracert`` itself uses, with the TTL or hop limit
+  set per probe. No raw socket, no administrator rights.
 * macOS: an unprivileged ICMP datagram socket (``SOCK_DGRAM``,
-  ``IPPROTO_ICMP``). The kernel delivers echo replies and the routers' time
-  exceeded messages to it.
-* Linux: the same socket type, allowed when ``net.ipv4.ping_group_range``
+  ``IPPROTO_ICMP``; for IPv6 ``AF_INET6``, ``IPPROTO_ICMPV6``, which icmp6(4)
+  allows "to receive time exceeded message for traceroute"). The kernel
+  delivers echo replies and the routers' time exceeded messages to it.
+* Linux: the same socket types, allowed when ``net.ipv4.ping_group_range``
   includes the user's group (the default on most desktop distributions, off
-  on some servers). Routers' messages arrive on the socket's error queue
-  (``IP_RECVERR``). When the range excludes the user, :func:`available` says
-  why and the caller falls back to the system ``traceroute`` (UDP).
+  on some servers; the same range governs ICMPv6 ping sockets,
+  net/ipv4/ping.c ``ping_init_sock``). Routers' messages arrive on the
+  socket's error queue (``IP_RECVERR``, ``IPV6_RECVERR``). When the range
+  excludes the user, :func:`available` says why and the caller falls back to
+  the system ``traceroute`` (UDP).
+
+IPv6 (0.7.0): ICMPv6 echo request 128 and reply 129, time exceeded 3,
+destination unreachable 1 (RFC 4443); the hop limit is IPV6_UNICAST_HOPS.
+
+PATH DISCOVERY (0.7.0)
+----------------------
+:class:`FlowTransport` sends Paris-style probes for :mod:`multipath`. Every
+probe of one flow carries the same identifier and the same checksum, while
+the sequence number still names the probe: two payload bytes are set so the
+checksum comes out at the flow's value (Augustin et al., IMC 2006, "Paris
+traceroute"). Different flows differ in identifier and checksum, the fields
+per-flow load balancers hash for ICMP. Measured on macOS 27 (10 Oct 2026):
+the identifier, sequence and checksum set here arrive unchanged in routers'
+time exceeded quotes. Linux sets the identifier itself (the socket's bound
+"port") and computes the checksum over what it sends, so the payload is
+computed for the identifier the kernel uses. Windows' ICMP API sets the
+identifier and sequence itself and has no parameter for either, so it cannot
+hold a flow; :func:`flow_available` says so.
 
 OUTPUT
 ------
@@ -49,7 +70,7 @@ import struct
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 MAX_HOPS = 30
@@ -61,6 +82,7 @@ MAX_TTL = 255
 MAX_QUERIES = 10
 MAX_WAIT_SECONDS = 10.0
 PAYLOAD = b"routemap-engine-probe" + b"\0" * 11      # 32 bytes, like tracert
+FAMILIES = ("auto", "4", "6")
 TOOL_NAME = "icmp"
 # Ends the header line so the parser can name the tool (parse.PARSER_LABELS).
 HEADER_MARK = "ICMP echo, routemap-engine built-in prober"
@@ -73,6 +95,32 @@ class Reply:
     reached: bool = False        # an echo reply from the target itself
 
 
+class NoAddress(ValueError):
+    """The target has no address in the family asked for."""
+
+
+def resolve(target: str, family: str = "auto") -> str:
+    """The address to trace for *target*: the system's first choice
+    (getaddrinfo order) for "auto", else the first address of family "4"
+    or "6". Raises :class:`NoAddress` when there is none."""
+    af = {"4": socket.AF_INET, "6": socket.AF_INET6}.get(str(family), socket.AF_UNSPEC)
+    try:
+        infos = socket.getaddrinfo(target, None, af, socket.SOCK_DGRAM)
+    except socket.gaierror as exc:
+        if af == socket.AF_UNSPEC:
+            raise
+        raise NoAddress(f"{target} has no IPv{family} address") from exc
+    for fam, _t, _p, _c, sockaddr in infos:
+        if fam in (socket.AF_INET, socket.AF_INET6):
+            return str(ipaddress.ip_address(sockaddr[0].split("%")[0]))
+    raise NoAddress(f"{target} has no IPv{family} address" if af != socket.AF_UNSPEC
+                    else f"{target} has no address")
+
+
+def family_of(addr: str) -> int:
+    return 6 if ":" in addr else 4
+
+
 def _checksum(data: bytes) -> int:
     if len(data) % 2:
         data += b"\0"
@@ -82,19 +130,48 @@ def _checksum(data: bytes) -> int:
     return ~total & 0xFFFF
 
 
-def _echo(ident: int, seq: int) -> bytes:
-    header = struct.pack("!BBHHH", 8, 0, 0, ident, seq)
-    return struct.pack("!BBHHH", 8, 0, _checksum(header + PAYLOAD), ident, seq) + PAYLOAD
+def _pseudo(src: str, dst: str, length: int) -> bytes:
+    """The IPv6 pseudo-header the ICMPv6 checksum covers (RFC 4443 2.3)."""
+    return (socket.inet_pton(socket.AF_INET6, src) + socket.inet_pton(socket.AF_INET6, dst)
+            + struct.pack("!I3xB", length, 58))
+
+
+def _echo(ident: int, seq: int, *, af: int = 4, payload: bytes = PAYLOAD, src: str | None = None,
+          dst: str | None = None) -> bytes:
+    kind = 128 if af == 6 else 8
+    header = struct.pack("!BBHHH", kind, 0, 0, ident, seq)
+    pseudo = _pseudo(src, dst, 8 + len(payload)) if af == 6 and src and dst else b""
+    return struct.pack("!BBHHH", kind, 0, _checksum(pseudo + header + payload), ident, seq) + payload
+
+
+def paris_payload(ident: int, seq: int, checksum: int, *, af: int = 4, src: str | None = None,
+                  dst: str | None = None, tail: bytes = PAYLOAD[2:]) -> bytes:
+    """A payload that makes an echo request with this identifier and sequence
+    number carry *checksum*: two adjustable bytes, then *tail*. For IPv6 the
+    checksum covers the pseudo-header, so *src* and *dst* are needed."""
+    kind = 128 if af == 6 else 8
+    pseudo = _pseudo(src, dst, 8 + 2 + len(tail)) if af == 6 else b""
+    base = pseudo + struct.pack("!BBHHH", kind, 0, 0, ident, seq) + b"\0\0" + tail
+    s0 = ~_checksum(base) & 0xFFFF            # the one's complement sum without the adjustment
+    want = ~checksum & 0xFFFF
+    adj = (want - s0) % 0xFFFF
+    payload = struct.pack("!H", adj) + tail
+    if _checksum(pseudo + struct.pack("!BBHHH", kind, 0, 0, ident, seq) + payload) != checksum:
+        raise ValueError(f"no payload gives checksum {checksum:#06x}")   # only 0x0000 and 0xffff
+    return payload
 
 
 def _match_reply(raw: bytes, source: str, dst: str, seq: int) -> tuple[bool, bool]:
-    """(accept, reached) for one ICMP message read from the socket (RM-10).
+    """(accept, reached) for one ICMP or ICMPv6 message read from the socket (RM-10).
 
     The socket also sees replies meant for other programs and anything another
     host chooses to send, so a message counts only when it answers this probe:
     an echo reply from the target with this probe's sequence number, or an
     error that quotes at least 8 bytes of an echo request to the target with
     this sequence number. The identifier is not compared: Linux rewrites it."""
+    source = source.split("%")[0]
+    if family_of(dst) == 6:
+        return _match_reply6(raw, source, dst, seq)
     # macOS includes the IP header; Linux gives the ICMP message alone.
     off = (raw[0] & 0x0F) * 4 if raw and raw[0] >> 4 == 4 else 0
     if len(raw) < off + 8:
@@ -119,24 +196,94 @@ def _match_reply(raw: bytes, source: str, dst: str, seq: int) -> tuple[bool, boo
     return False, False
 
 
+def _match_reply6(raw: bytes, source: str, dst: str, seq: int) -> tuple[bool, bool]:
+    """The same for ICMPv6 (RFC 4443): echo reply 129, time exceeded 3,
+    destination unreachable 1. A socket gets the ICMPv6 message without the
+    IPv6 header; an error quotes the 40-byte IPv6 header of the probe."""
+    if len(raw) < 8:
+        return False, False
+    icmp_type = raw[0]
+    if icmp_type == 129:
+        ok = (ipaddress.ip_address(source) == ipaddress.ip_address(dst)
+              and struct.unpack("!H", raw[6:8])[0] == seq)
+        return ok, ok
+    if icmp_type in (3, 1):
+        inner = raw[8:]
+        if len(inner) < 40 + 8 or inner[0] >> 4 != 6 or inner[6] != 58:
+            return False, False
+        if inner[24:40] != socket.inet_pton(socket.AF_INET6, dst):
+            return False, False
+        quoted = inner[40:48]
+        if quoted[0] != 128 or struct.unpack("!H", quoted[6:8])[0] != seq:
+            return False, False
+        reached = icmp_type == 1 and ipaddress.ip_address(source) == ipaddress.ip_address(dst)
+        return True, reached
+    return False, False
+
+
 # ------------------------------------------------------------------ POSIX ---
 
 IP_RECVERR = 11
+IPV6_RECVERR = 25
 MSG_ERRQUEUE = 0x2000
 SO_EE_ORIGIN_ICMP = 2
+SO_EE_ORIGIN_ICMP6 = 3
+
+
+def _icmp_socket(af: int) -> socket.socket:
+    if af == 6:
+        return socket.socket(socket.AF_INET6, socket.SOCK_DGRAM, socket.IPPROTO_ICMPV6)
+    return socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+
+
+def _set_hops(sock: socket.socket, af: int, ttl: int):
+    if af == 6:
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_UNICAST_HOPS, ttl)
+    else:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
+
+
+def _source_for(dst: str) -> str:
+    """The source address the system would use for *dst*: a UDP socket's
+    connect picks the route and sends nothing."""
+    af = family_of(dst)
+    with socket.socket(socket.AF_INET6 if af == 6 else socket.AF_INET, socket.SOCK_DGRAM) as udp:
+        udp.connect((dst, 9))
+        return udp.getsockname()[0].split("%")[0]
+
+
+def _read_errqueue(sock: socket.socket, af: int) -> tuple[bytes, str | None]:
+    """Linux: (the probe the error is about, the router that sent it)."""
+    try:
+        sent, ancdata, _, _ = sock.recvmsg(512, 512, MSG_ERRQUEUE)
+    except (BlockingIOError, OSError):
+        return b"", None
+    for level, kind, data in ancdata:
+        if af == 4 and level == socket.IPPROTO_IP and kind == IP_RECVERR and len(data) >= 16 + 8:
+            if struct.unpack("=IBBB", data[:7])[1] == SO_EE_ORIGIN_ICMP:
+                return sent, socket.inet_ntoa(data[16 + 4:16 + 8])
+        if af == 6 and level == socket.IPPROTO_IPV6 and kind == IPV6_RECVERR and len(data) >= 16 + 24:
+            if struct.unpack("=IBBB", data[:7])[1] == SO_EE_ORIGIN_ICMP6:
+                return sent, str(ipaddress.IPv6Address(data[16 + 8:16 + 24]))
+    return sent, None
 
 
 def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+    af = family_of(dst)
+    sock = _icmp_socket(af)
     try:
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
+        _set_hops(sock, af, ttl)
         linux = sys.platform.startswith("linux")
         if linux:
-            sock.setsockopt(socket.IPPROTO_IP, IP_RECVERR, 1)
+            if af == 6:
+                sock.setsockopt(socket.IPPROTO_IPV6, IPV6_RECVERR, 1)
+            else:
+                sock.setsockopt(socket.IPPROTO_IP, IP_RECVERR, 1)
         ident = os.getpid() & 0xFFFF
+        src = _source_for(dst) if af == 6 else None
         sock.setblocking(False)
         start = time.perf_counter()
-        sock.sendto(_echo(ident, seq), (dst, 0))
+        sock.sendto(_echo(ident, seq, af=af, src=src, dst=dst), (dst, 0))
         deadline = start + wait
         import select
         while True:
@@ -147,21 +294,10 @@ def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
             if not readable and not errored:
                 continue
             if linux:
-                try:
-                    sent, ancdata, _, _ = sock.recvmsg(512, 512, MSG_ERRQUEUE)
-                except BlockingIOError:
-                    sent, ancdata = b"", []
+                sent, offender = _read_errqueue(sock, af)
                 # The kernel returns the request the error is about: only ours counts.
-                if len(sent) < 8 or struct.unpack("!H", sent[6:8])[0] != seq:
-                    ancdata = []
-                for level, kind, data in ancdata:
-                    if level == socket.IPPROTO_IP and kind == IP_RECVERR and len(data) >= 16 + 8:
-                        _errno, origin, icmp_type, _code = struct.unpack("=IBBB", data[:7])
-                        if origin != SO_EE_ORIGIN_ICMP:
-                            continue
-                        offender = socket.inet_ntoa(data[16 + 4:16 + 8])
-                        rtt = (time.perf_counter() - start) * 1000
-                        return Reply(offender, rtt)
+                if offender and len(sent) >= 8 and struct.unpack("!H", sent[6:8])[0] == seq:
+                    return Reply(offender, (time.perf_counter() - start) * 1000)
             try:
                 raw, addr = sock.recvfrom(2048)
             except (BlockingIOError, OSError):
@@ -169,14 +305,14 @@ def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
             rtt = (time.perf_counter() - start) * 1000
             accept, reached = _match_reply(raw, addr[0], dst, seq)
             if accept:
-                return Reply(addr[0], rtt, reached=reached)
+                return Reply(addr[0].split("%")[0], rtt, reached=reached)
     finally:
         sock.close()
 
 
-def _posix_available() -> tuple[bool, str]:
+def _posix_available(af: int = 4) -> tuple[bool, str]:
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+        sock = _icmp_socket(af)
         sock.close()
         return True, ""
     except PermissionError:
@@ -225,10 +361,34 @@ def _windows_api():
                                  ctypes.POINTER(IP_OPTION_INFORMATION), ctypes.c_void_p, wintypes.DWORD,
                                  wintypes.DWORD]
     lib.IcmpSendEcho.restype = wintypes.DWORD
+    lib.Icmp6CreateFile.restype = wintypes.HANDLE
+    lib.Icmp6SendEcho2.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                   ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wintypes.WORD,
+                                   ctypes.POINTER(IP_OPTION_INFORMATION), ctypes.c_void_p, wintypes.DWORD,
+                                   wintypes.DWORD]
+    lib.Icmp6SendEcho2.restype = wintypes.DWORD
     return ctypes, lib, IP_OPTION_INFORMATION, ICMP_ECHO_REPLY
 
 
+def _sockaddr_in6(addr: str) -> bytes:
+    """struct sockaddr_in6 (28 bytes): family, port, flowinfo, address, scope."""
+    return struct.pack("<HHI", socket.AF_INET6, 0, 0) + socket.inet_pton(socket.AF_INET6, addr) + b"\0" * 4
+
+
+def _windows_status(status: int, address: str, dst: str, rtt: float) -> Reply:
+    if status == IP_SUCCESS:
+        return Reply(address, rtt, reached=True)
+    if status == IP_TTL_EXPIRED_TRANSIT:                 # IP_HOP_LIMIT_EXCEEDED for IPv6: the same code
+        return Reply(address, rtt)
+    if status in (IP_DEST_HOST_UNREACHABLE, IP_DEST_NET_UNREACHABLE, IP_DEST_PROT_UNREACHABLE,
+                  IP_DEST_PORT_UNREACHABLE):
+        return Reply(address, rtt, reached=ipaddress.ip_address(address) == ipaddress.ip_address(dst))
+    return Reply(None, None)
+
+
 def _windows_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
+    if family_of(dst) == 6:
+        return _windows_probe6(dst, ttl, wait)
     ctypes, lib, Options, EchoReply = _windows_api()
     handle = lib.IcmpCreateFile()
     try:
@@ -248,38 +408,192 @@ def _windows_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
             return Reply(None, None)
         echo = EchoReply.from_buffer_copy(reply.raw[:ctypes.sizeof(EchoReply)])
         address = socket.inet_ntoa(struct.pack("<I", echo.Address))
-        rtt = round(elapsed, 3)
-        if echo.Status == IP_SUCCESS:
-            return Reply(address, rtt, reached=True)
-        if echo.Status == IP_TTL_EXPIRED_TRANSIT:
-            return Reply(address, rtt)
-        if echo.Status in (IP_DEST_HOST_UNREACHABLE, IP_DEST_NET_UNREACHABLE, IP_DEST_PROT_UNREACHABLE,
-                           IP_DEST_PORT_UNREACHABLE):
-            return Reply(address, rtt, reached=address == dst)
-        return Reply(None, None)
+        return _windows_status(echo.Status, address, dst, round(elapsed, 3))
     finally:
         lib.IcmpCloseHandle(handle)
 
 
-def _windows_available() -> tuple[bool, str]:
+# ICMPV6_ECHO_REPLY: IPV6_ADDRESS_EX (sin6_port USHORT, sin6_flowinfo ULONG,
+# sin6_addr USHORT[8], sin6_scope_id ULONG; packed, ipexport.h pshpack1), then
+# Status ULONG and RoundTripTime.
+_V6_REPLY_ADDR = slice(6, 22)
+_V6_REPLY_STATUS = slice(26, 30)
+_V6_REPLY_SIZE = 34
+
+
+def _windows_probe6(dst: str, ttl: int, wait: float) -> Reply:
+    ctypes, lib, Options, _ = _windows_api()
+    handle = lib.Icmp6CreateFile()
+    try:
+        options = Options(Ttl=ttl)
+        request = ctypes.create_string_buffer(PAYLOAD, len(PAYLOAD))
+        size = _V6_REPLY_SIZE + len(PAYLOAD) + 8 + 64
+        reply = ctypes.create_string_buffer(size)
+        src = ctypes.create_string_buffer(_sockaddr_in6(_source_for(dst)), 28)
+        dest = ctypes.create_string_buffer(_sockaddr_in6(dst), 28)
+        start = time.perf_counter()
+        count = lib.Icmp6SendEcho2(handle, None, None, None, src, dest, request, len(PAYLOAD),
+                                   ctypes.byref(options), reply, size, int(wait * 1000))
+        elapsed = (time.perf_counter() - start) * 1000
+        if count == 0:
+            return Reply(None, None)
+        raw = reply.raw
+        address = str(ipaddress.IPv6Address(raw[_V6_REPLY_ADDR]))
+        status = struct.unpack("<I", raw[_V6_REPLY_STATUS])[0]
+        return _windows_status(status, address, dst, round(elapsed, 3))
+    finally:
+        lib.IcmpCloseHandle(handle)
+
+
+def _windows_available(af: int = 4) -> tuple[bool, str]:
     try:
         _, lib, _, _ = _windows_api()
-        handle = lib.IcmpCreateFile()
+        handle = lib.Icmp6CreateFile() if af == 6 else lib.IcmpCreateFile()
         if not handle or handle == -1:
-            return False, "IcmpCreateFile failed"
+            return False, "Icmp6CreateFile failed" if af == 6 else "IcmpCreateFile failed"
         lib.IcmpCloseHandle(handle)
         return True, ""
     except Exception as exc:  # noqa: BLE001
         return False, f"the Windows ICMP API is not available ({exc})"
 
 
+# ------------------------------------------------------------- path probes ---
+
+@dataclass
+class FlowAnswer:
+    seq: int
+    address: str
+    reached: bool
+    at: float                    # perf_counter() when read
+
+
+def flow_checksum(flow: int) -> int:
+    """The checksum flow *flow* carries: distinct per flow, never 0x0000 or 0xffff."""
+    return 0x1000 + (flow * 0x0F1D) % 0xE000
+
+
+def flow_available() -> tuple[bool, str]:
+    """(usable, reason when not) for Paris-style path probes on this system."""
+    if sys.platform.startswith("win"):
+        return False, ("Windows' ICMP API chooses each probe's identifier and sequence number itself, "
+                       "so it cannot keep the probes of one flow on one path")
+    return _posix_available()
+
+
+class FlowTransport:
+    """Paris-style probes for path discovery on macOS and Linux (see the module
+    docstring). :meth:`send` sends one probe of flow *flow* at *ttl*;
+    :meth:`read` returns the answers that have arrived, matched by sequence
+    number. One socket per flow on Linux (the kernel's identifier is the
+    socket's), one socket for all flows on macOS (the identifier is ours)."""
+
+    def __init__(self, dst: str):
+        self.dst = dst
+        self.af = family_of(dst)
+        self.linux = sys.platform.startswith("linux")
+        self.src = _source_for(dst) if self.af == 6 else None
+        self._socks: dict[int, socket.socket] = {}
+        self._idents: dict[int, int] = {}
+        self._base = secrets.randbelow(0x8000)
+        self._shared: socket.socket | None = None
+
+    def _sock(self, flow: int) -> socket.socket:
+        if not self.linux:
+            if self._shared is None:
+                self._shared = _icmp_socket(self.af)
+                self._shared.setblocking(False)
+            self._idents.setdefault(flow, (self._base + flow) & 0xFFFF)
+            return self._shared
+        sock = self._socks.get(flow)
+        if sock is None:
+            sock = _icmp_socket(self.af)
+            if self.af == 6:
+                sock.setsockopt(socket.IPPROTO_IPV6, IPV6_RECVERR, 1)
+                sock.bind(("::", 0))
+            else:
+                sock.setsockopt(socket.IPPROTO_IP, IP_RECVERR, 1)
+                sock.bind(("0.0.0.0", 0))
+            sock.setblocking(False)
+            self._socks[flow] = sock
+            self._idents[flow] = sock.getsockname()[1]
+        return sock
+
+    def ident(self, flow: int) -> int:
+        self._sock(flow)
+        return self._idents[flow]
+
+    def packet(self, flow: int, seq: int) -> bytes:
+        ident = self.ident(flow)
+        payload = paris_payload(ident, seq, flow_checksum(flow), af=self.af, src=self.src, dst=self.dst)
+        return _echo(ident, seq, af=self.af, payload=payload, src=self.src, dst=self.dst)
+
+    def send(self, flow: int, ttl: int, seq: int):
+        sock = self._sock(flow)
+        _set_hops(sock, self.af, ttl)
+        sock.sendto(self.packet(flow, seq), (self.dst, 0))
+
+    def read(self, timeout: float) -> list[FlowAnswer]:
+        import select
+        socks = list(self._socks.values()) + ([self._shared] if self._shared else [])
+        if not socks:
+            return []
+        readable, _, errored = select.select(socks, [], socks, max(0.0, timeout))
+        now = time.perf_counter()
+        out: list[FlowAnswer] = []
+        for sock in set(readable) | set(errored):
+            for _ in range(64):
+                got = False
+                if self.linux:
+                    sent, offender = _read_errqueue(sock, self.af)
+                    if offender and len(sent) >= 8:
+                        out.append(FlowAnswer(struct.unpack("!H", sent[6:8])[0], offender, False, now))
+                        got = True
+                try:
+                    raw, addr = sock.recvfrom(2048)
+                except (BlockingIOError, OSError):
+                    raw = None
+                if raw:
+                    got = True
+                    seq = _answered_seq(raw, self.dst)
+                    if seq is not None:
+                        ok, reached = _match_reply(raw, addr[0], self.dst, seq)
+                        if ok:
+                            out.append(FlowAnswer(seq, addr[0].split("%")[0], reached, now))
+                if not got:
+                    break
+        return out
+
+    def close(self):
+        for sock in list(self._socks.values()) + ([self._shared] if self._shared else []):
+            sock.close()
+        self._socks.clear()
+        self._shared = None
+
+
+def _answered_seq(raw: bytes, dst: str) -> int | None:
+    """The sequence number a reply or an error answers, before matching it."""
+    try:
+        if family_of(dst) == 6:
+            if raw[0] == 129:
+                return struct.unpack("!H", raw[6:8])[0]
+            return struct.unpack("!H", raw[8 + 40 + 6:8 + 40 + 8])[0]
+        off = (raw[0] & 0x0F) * 4 if raw[0] >> 4 == 4 else 0
+        if raw[off] == 0:
+            return struct.unpack("!H", raw[off + 6:off + 8])[0]
+        inner = raw[off + 8:]
+        ihl = (inner[0] & 0x0F) * 4
+        return struct.unpack("!H", inner[ihl + 6:ihl + 8])[0]
+    except (IndexError, struct.error):
+        return None
+
+
 # ------------------------------------------------------------------ public ---
 
-def available() -> tuple[bool, str]:
+def available(family: int = 4) -> tuple[bool, str]:
     """(usable, reason when not) for the built-in ICMP prober on this system."""
     if sys.platform.startswith("win"):
-        return _windows_available()
-    return _posix_available()
+        return _windows_available(family)
+    return _posix_available(family)
 
 
 def _probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
@@ -313,11 +627,10 @@ def format_hop(ttl: int, replies: list[Reply]) -> list[str]:
 
 def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait: float = WAIT_SECONDS,
           on_line: Callable[[str], None] | None = None, cancel: threading.Event | None = None,
-          deadline: float | None = None) -> tuple[str, bool, bool]:
-    """Trace *target* (a validated hostname or address). Returns (text, cancelled,
-    timed_out). IPv4 only; the caller handles IPv6 with the system tool."""
-    dst = socket.gethostbyname(target)
-    ipaddress.IPv4Address(dst)
+          deadline: float | None = None, family: str = "auto") -> tuple[str, bool, bool]:
+    """Trace *target* (a validated hostname or address) over IPv4 or IPv6
+    (*family*: "auto", "4" or "6"). Returns (text, cancelled, timed_out)."""
+    dst = resolve(target, family)
     max_hops = max(1, min(int(max_hops), MAX_TTL))
     queries = max(1, min(int(queries), MAX_QUERIES))
     wait = max(0.1, min(float(wait), MAX_WAIT_SECONDS))
@@ -331,7 +644,8 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
             except Exception:  # noqa: BLE001
                 pass
 
-    emit(f"traceroute to {target} ({dst}), {max_hops} hops max, {8 + len(PAYLOAD)} byte packets, {HEADER_MARK}")
+    emit(f"traceroute to {target} ({dst}), {max_hops} hops max, {8 + len(PAYLOAD)} byte packets, {HEADER_MARK}"
+         + (", IPv6" if family_of(dst) == 6 else ""))
     # A random start, so a reply cannot be guessed from the trace's position.
     seq = secrets.randbelow(0x10000)
     for ttl in range(1, max_hops + 1):
