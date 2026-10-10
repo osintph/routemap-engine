@@ -13,6 +13,13 @@ are never sent: there is deliberately no ``radius=`` probe filter, and the
 "distance from you" figure is computed here from the probe's own published
 coordinates.
 
+A REVERSE trace (0.7.0, :meth:`Atlas.create_reverse`) is the one exception:
+its target is the user's own public IP address, so that address is sent to
+RIPE and published with the measurement. It runs only with ``consent=True``,
+which the app passes only after the user agreed to exactly that. Its probe is
+chosen in the destination's network, then the destination's country, never
+in the user's own AS.
+
 A measurement is PUBLIC. RIPE Atlas publishes one-off measurements, including
 the target, the probe and the result. The desktop app asks the user to
 acknowledge that before the first Atlas trace, and nothing here can make it
@@ -46,6 +53,13 @@ BASE_URL = "https://atlas.ripe.net/api/v2"
 # asks for one probe, three packets, the default size and is_oneoff: 60.
 TRACEROUTE_CREDITS = 60
 DEFAULT_TIMEOUT_SECONDS = 150.0
+# RIPE's schema for a traceroute definition (the POST /measurements/ reference
+# at atlas.ripe.net/docs, read 10 Oct 2026): "paris" is 0 to 64, default 16,
+# "The number of paris traceroute variations to try. Zero disables paris
+# traceroute"; "size" defaults to 48. The credit formula has no paris term,
+# so a reverse trace costs the same 60.
+REVERSE_PARIS = 16
+REVERSE_DESCRIPTION = "routemap-engine reverse traceroute"
 
 
 class AtlasUnavailable(Exception):
@@ -155,31 +169,64 @@ class Atlas:
                 except (TypeError, ValueError):
                     lat = lon = None
             out.append({"id": item.get("id"), "asn": item.get("asn_v4") or item.get("asn_v6"),
+                        "asn_v4": item.get("asn_v4"), "asn_v6": item.get("asn_v6"),
                         "country": item.get("country_code"), "lat": lat, "lon": lon})
         return [p for p in out if p.get("id")]
 
+    @staticmethod
+    def _query(af: int, **criteria) -> dict:
+        """A probe search: connected probes whose IPv4 or IPv6 works, as RIPE's
+        system tags say ("at least one successful ping result for any one of a
+        selection of baseline targets", re-assessed every four hours)."""
+        return {**criteria, "status": 1, "tags": f"system-ipv{6 if af == 6 else 4}-works", "page_size": 100}
+
+    @staticmethod
+    def _rank(candidates: list[dict], position: tuple[float, float] | None) -> list[dict]:
+        if position is not None:
+            for probe in candidates:
+                probe["distance_km"] = (None if probe["lat"] is None else round(
+                    geo.haversine_km(position[0], position[1], probe["lat"], probe["lon"]), 1))
+            candidates.sort(key=lambda p: (p["distance_km"] is None, p["distance_km"] or 0.0))
+        return candidates
+
     async def select_probe(self, asn: int | None, country: str | None,
-                           origin: tuple[float, float] | None) -> dict:
+                           origin: tuple[float, float] | None, af: int = 4) -> dict:
         """The user's own network first, their country next; nearest first.
 
         *origin* only ranks candidates, here. It is never sent.
         """
         candidates: list[dict] = []
         if asn:
-            candidates = await self.probes({"asn_v4": asn, "status": 1, "page_size": 100})
+            candidates = await self.probes(self._query(af, **{f"asn_v{6 if af == 6 else 4}": asn}))
         if not candidates and country:
-            candidates = await self.probes({"country_code": country.upper(), "status": 1,
-                                            "page_size": 100})
+            candidates = await self.probes(self._query(af, country_code=country.upper()))
         if not candidates:
             raise AtlasUnavailable(
                 "noprobe", "No connected RIPE Atlas probe was found on your network or in "
                            "your country, so an Atlas trace would not describe your path.")
-        if origin is not None:
-            for probe in candidates:
-                probe["distance_km"] = (None if probe["lat"] is None else round(
-                    geo.haversine_km(origin[0], origin[1], probe["lat"], probe["lon"]), 1))
-            candidates.sort(key=lambda p: (p["distance_km"] is None, p["distance_km"] or 0.0))
-        return candidates[0]
+        return self._rank(candidates, origin)[0]
+
+    async def select_reverse_probe(self, dest_asn: int | None, dest_country: str | None,
+                                   dest_position: tuple[float, float] | None, *,
+                                   user_asn: int | None, af: int = 4) -> dict:
+        """A probe in the destination's network, else in its country, nearest
+        the destination's located position first; never one in the user's own
+        AS, whose trace back would not start near the destination."""
+        key = f"asn_v{6 if af == 6 else 4}"
+
+        def usable(found: list[dict]) -> list[dict]:
+            return [p for p in found if not (user_asn and p.get(key) == user_asn)]
+        candidates: list[dict] = []
+        if dest_asn:
+            candidates = usable(await self.probes(self._query(af, **{key: dest_asn})))
+        if not candidates and dest_country:
+            candidates = usable(await self.probes(self._query(af, country_code=dest_country.upper())))
+        if not candidates:
+            where = " or ".join(x for x in (f"AS{dest_asn}" if dest_asn else "",
+                                            (dest_country or "").upper()) if x) or "the destination's network"
+            raise AtlasUnavailable("noprobe", f"No connected RIPE Atlas probe was found in {where}, "
+                                              "so there is nothing to trace back from. No credits were spent.")
+        return self._rank(candidates, dest_position)[0]
 
     async def balance(self) -> Balance:
         """The account's credits. Never raises: a source that fails tells the
@@ -212,12 +259,27 @@ class Atlas:
                        daily_income=_count(body.get("estimated_daily_income")),
                        daily_expenditure=_count(body.get("estimated_daily_expenditure")))
 
-    async def create(self, target: str, probe_id: int, af: int = 4) -> int:
+    async def create_reverse(self, public_ip: str, probe_id: int, *, consent: bool) -> int:
+        """A traceroute from *probe_id* back to the user's *public_ip*. RIPE
+        publishes it, with that address as the target, so it runs only when
+        the caller passes ``consent=True`` (exactly True, not a truthy value)."""
+        if consent is not True:
+            raise AtlasUnavailable("consent", "A reverse trace publishes your public IP address. "
+                                              "It needs your agreement first.")
+        from routemap_engine import netaddr
+        if netaddr.is_private_ip(public_ip):
+            raise AtlasUnavailable("failed", "That is not a public address, so RIPE Atlas cannot trace to it.")
+        af = 6 if ":" in public_ip else 4
+        return await self.create(public_ip, probe_id, af, paris=REVERSE_PARIS, description=REVERSE_DESCRIPTION,
+                                 resolve_on_probe=False)
+
+    async def create(self, target: str, probe_id: int, af: int = 4, *, paris: int = 0,
+                     description: str | None = None, resolve_on_probe: bool = True) -> int:
         body = {
             "definitions": [{
                 "type": "traceroute", "af": af, "target": target,
-                "description": self.description, "protocol": "ICMP",
-                "resolve_on_probe": True, "paris": 0, "first_hop": 1, "max_hops": 30,
+                "description": description or self.description, "protocol": "ICMP",
+                "resolve_on_probe": resolve_on_probe, "paris": paris, "first_hop": 1, "max_hops": 30,
                 "packets": 3,
             }],
             "probes": [{"type": "probes", "value": str(probe_id), "requested": 1}],
