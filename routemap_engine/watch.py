@@ -259,6 +259,10 @@ class PathTracker:
 # ------------------------------------------------------------------ session ---
 
 ProbeFn = Callable[[str, int, int, float], probe.Reply]
+# The built-in prober as this module first saw it: only a session that probes
+# with it needs a route to the target (a test or a caller with its own probe
+# function has none to check, even when it puts that function in its place).
+_BUILT_IN_PROBE = probe._probe
 
 
 @dataclass
@@ -366,7 +370,7 @@ class Watch:
     # the loop
     def run(self) -> Session:
         dst = str(ipaddress.ip_address(self.resolve(self.target)))
-        if self.probe_fn is probe._probe:
+        if self.probe_fn is _BUILT_IN_PROBE:
             probe.check_route(dst)        # a scripted probe function has no routes to check
         opts = self.options
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())

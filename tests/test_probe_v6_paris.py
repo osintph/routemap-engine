@@ -173,6 +173,20 @@ def test_no_route_for_the_family_is_one_clear_error_before_any_probe(monkeypatch
     monkeypatch.setattr(multipath, "available", lambda: (True, ""))
     with pytest.raises(probe.NoAddress, match="no IPv6 route"):
         multipath.discover("example.net", family="6")
+    monkeypatch.setattr(probe, "_probe", watch._BUILT_IN_PROBE)
     with pytest.raises(probe.NoRoute):
         watch.Watch("example.net", watch.WatchOptions(max_cycles=1)).run()
     assert sent == []
+
+
+def test_live_with_its_own_probe_function_checks_no_route(monkeypatch):
+    """A caller or a test that replaces the probe function (even probe._probe
+    itself) brings its own network; Live must not ask the system for a route
+    (found by the app's IPv6 Live test on a machine without IPv6)."""
+    from routemap_engine import watch
+    monkeypatch.setattr(probe, "check_route", lambda dst: pytest.fail("no route check expected"))
+    fake = lambda dst, ttl, seq, wait: probe.Reply(DST6, 1.0, reached=True)  # noqa: E731
+    monkeypatch.setattr(probe, "_probe", fake)
+    for w in (watch.Watch("x", watch.WatchOptions(max_cycles=1), resolve=lambda t: DST6),
+              watch.Watch("x", watch.WatchOptions(max_cycles=1), probe_fn=fake, resolve=lambda t: DST6)):
+        assert w.run().cycles == 1
