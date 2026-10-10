@@ -39,6 +39,22 @@ Keep a Changelog format; this project uses Semantic Versioning.
   variations, RIPE's default).
 - `whereami.public_ip(family=)` and `locate_me(family=)` ask over IPv4 or
   IPv6, so a dual-stack machine gets the address of the traced family.
+- **Atlas's final TTL 255 probe** is numbered as the hop after the last one
+  sent, as RIPE's results page does (`atlas.final_probe`, used by
+  `to_trace_text`), and `atlas.mark_final_probe` annotates it "answered the
+  final TTL 255 probe" (a new annotation in the schema). Found in a real
+  reverse trace (measurement 221303797), where it showed as hop 255.
+- `Atlas.wait_result()` returns RIPE's result object; `wait()` still returns
+  the text.
+- **The physics check takes the origin's own uncertainty**:
+  `analyse(origin_slack_km=)`, `geo.resolve(slack_km=)`,
+  `geo.locate_hops(slack_km=)`. 300 km (`geo.SLACK_KM`) stays the default,
+  for an origin guessed from a public IP; a RIPE Atlas probe's published
+  position gets `atlas.PROBE_SLACK_KM`, 5 km. In measurement 221303797 the
+  IP database put hop 1 (0.406 ms, so at most 40.6 km) 48 km from the probe,
+  and 300 km of slack let it through.
+- `probe.NoRoute` (a `NoAddress`): a trace, path discovery or Live on a
+  machine with no route for the family says so once, before the first probe.
 
 ### Changed
 - **Special-purpose addresses follow the IANA registries row by row** and no
@@ -50,6 +66,9 @@ Keep a Changelog format; this project uses Semantic Versioning.
   `system-ipv6-works`); `select_probe()` takes `af`.
 - `geo.resolve()` is now `gather_records()` plus placement; its result is
   unchanged.
+- `Atlas.wait()` waits up to 420 s (was 150 s): RIPE waits 4 s per packet,
+  3 packets a hop, up to 30 hops, so a path with silent routers can take
+  about 360 s. Measurement 221303797 took 141 s.
 
 ## [0.6.0] - 2026-10-10
 

@@ -327,7 +327,8 @@
               "location impossible for RTT",
               "likely asymmetric return path",
               "ICMP rate limiting, not real loss",
-              "destination or path does not answer ICMP"
+              "destination or path does not answer ICMP",
+              "answered the final TTL 255 probe"
             ]
           }
         },

@@ -1,0 +1,91 @@
+"""A real reverse trace (RIPE Atlas measurement 221303797, the 0.7.0 release
+check): the final TTL 255 answer, the lookups on Atlas hops, and the physics
+check from the probe's own position. tests/fixtures/atlas_221303797.json is
+RIPE's result with the measured host's address replaced."""
+import asyncio
+import json
+import pathlib
+
+import jsonschema
+import pytest
+
+from routemap_engine import OFFLINE, Sources, analyse, atlas, geo, parse_trace, schema
+
+DATA = json.loads((pathlib.Path(__file__).parent / "fixtures" / "atlas_221303797.json").read_text())
+RESULT, PROBE = DATA["result"], DATA["probe"]
+ORIGIN = (PROBE["lat"], PROBE["lon"])
+
+
+def test_the_final_ttl_255_answer_is_the_next_hop_and_says_so():
+    """RIPE's results page shows this answer as hop 22; the engine showed 255."""
+    assert atlas.final_probe(RESULT) == 22
+    hops = parse_trace(atlas.to_trace_text(RESULT)).hops
+    assert [h.hop for h in hops] == list(range(1, 23))
+    assert hops[-1].addresses == ["198.51.100.76"] and hops[-1].min_rtt_ms == 154.032
+    route = asyncio.run(analyse(atlas.to_trace_text(RESULT), ORIGIN, sources=OFFLINE))
+    atlas.mark_final_probe(route, atlas.final_probe(RESULT))
+    last = route.hops[-1]
+    assert last["hop"] == 22 and atlas.ANNOT_FINAL_PROBE in last["annotations"]
+    assert any("TTL 255" in d for d in last["annotation_details"])
+    assert all(atlas.ANNOT_FINAL_PROBE not in h["annotations"] for h in route.hops[:-1])
+    jsonschema.validate(route.to_dict(), schema())
+
+
+def test_a_result_without_the_final_probe_keeps_its_numbers():
+    plain = dict(RESULT, result=[h for h in RESULT["result"] if h["hop"] != 255])
+    assert atlas.final_probe(plain) is None
+    assert parse_trace(atlas.to_trace_text(plain)).hops[-1].hop == 21
+
+
+def test_reverse_dns_and_hoiho_run_on_atlas_hops():
+    """Atlas results carry no names: every public hop is asked for its PTR
+    name, and Hoiho is asked about every name found (it has no rule for
+    OVH's or Deutsche Telekom's, so the IP database places them)."""
+    asked = {}
+
+    async def ptr(addresses):
+        asked["ptr"] = sorted(addresses)
+        return {"94.23.122.136": "be101.sbg-g1-nc5.fr.eu", "217.5.67.42": "f-eh4-i.F.DE.NET.DTAG.DE"}
+
+    async def hoiho(names):
+        asked["hoiho"] = sorted(names)
+        return {n: {"located": False} for n in names}, "2024-08"
+
+    async def ip_db(addresses):
+        return {}
+    route = asyncio.run(analyse(atlas.to_trace_text(RESULT), ORIGIN, sources=Sources(hoiho=hoiho, ip_db=ip_db, ptr=ptr)))
+    public = {a for h in RESULT["result"] for r in h.get("result", []) if (a := r.get("from"))} - {"198.51.100.76"}
+    assert set(asked["ptr"]) == public
+    assert asked["hoiho"] == ["be101.sbg-g1-nc5.fr.eu", "f-eh4-i.F.DE.NET.DTAG.DE"]
+    assert {h["hostname"] for h in route.hops if h.get("hostname")} == set(asked["hoiho"])
+
+
+# Where the IP database put hops 1 to 4 in the release-check run.
+LEIHGESTERN, WISSEN = (50.5332, 8.6838), (50.7826, 7.7353)
+
+
+async def _ip(addresses):
+    where = {"82.98.65.251": LEIHGESTERN, **{a: WISSEN for a in ("82.98.102.180", "82.98.103.3", "82.98.102.55")}}
+    return {a: {"lat": where[a][0], "lon": where[a][1], "city": "x", "cc": "DE"} for a in addresses if a in where}
+
+
+def test_a_probe_position_rejects_what_its_round_trip_cannot_reach():
+    """Hop 1 answered in 0.406 ms: 40.6 km at most, and the IP database put
+    it 48 km from probe 7036. From the probe's own position (5 km of slack)
+    that is rejected; hops 2 to 4 (1.0 to 1.3 ms, 98 km away) are physically
+    possible and stay. With the 300 km meant for a public-IP origin, hop 1
+    passed, which is what the release check showed."""
+    text = atlas.to_trace_text(RESULT)
+    sources = Sources(hoiho=None, ip_db=_ip, ptr=None)
+    d = geo.haversine_km(*ORIGIN, *LEIHGESTERN)
+    assert 45.6 < d < 7.7 + 40.6
+    strict = asyncio.run(analyse(text, ORIGIN, sources=sources, origin_slack_km=atlas.PROBE_SLACK_KM)).hops
+    assert strict[0]["lat"] is None and geo.ANNOT_RTT_IMPOSSIBLE in (strict[0]["reason"] or "")
+    assert [h["lat"] is not None for h in strict[1:4]] == [True, True, True]
+    loose = asyncio.run(analyse(text, ORIGIN, sources=sources)).hops
+    assert loose[0]["lat"] is not None
+
+
+@pytest.mark.parametrize("slack", [atlas.PROBE_SLACK_KM, geo.SLACK_KM])
+def test_the_allowance_is_the_only_difference(slack):
+    assert geo.max_distance_km(0.406, slack) == pytest.approx(40.6 + slack)

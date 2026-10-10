@@ -154,7 +154,8 @@ def _parsed(trace) -> ParsedTrace:
 
 async def analyse(trace, origin: tuple[float, float] | None = None, *,
                   sources: geo.Sources | None = None,
-                  progress: geo.ProgressFn | None = None) -> Route:
+                  progress: geo.ProgressFn | None = None,
+                  origin_slack_km: float = geo.SLACK_KM) -> Route:
     """Parse (if needed), locate and annotate one trace.
 
     *trace* is traceroute/tracert/mtr text, a :class:`ParsedTrace`, or a list
@@ -175,7 +176,8 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
     if not parsed.hops:
         raise TraceParseError("No hops were found in that trace.")
 
-    resolved = await geo.resolve(parsed.hops, origin, sources=sources, progress=progress)
+    resolved = await geo.resolve(parsed.hops, origin, sources=sources, progress=progress,
+                                 slack_km=origin_slack_km)
     located = resolved["hops"]
     return Route(
         parser=parsed.parser,
