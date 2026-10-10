@@ -438,24 +438,10 @@
           ]
         },
         "lat": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/coord_lat"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/coord_lat"
         },
         "lon": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/coord_lon"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/coord_lon"
         },
         "place": {
           "type": [
@@ -470,7 +456,13 @@
           ]
         },
         "source": {
-          "type": "string"
+          "enum": [
+            "hoiho",
+            "site-code",
+            "ip-db",
+            "local",
+            "unresolved"
+          ]
         },
         "min_rtt_ms": {
           "type": [
@@ -508,8 +500,24 @@
       ],
       "properties": {
         "id": {
-          "type": "string",
-          "pattern": "^[A-P]$"
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P"
+          ]
         },
         "flows": {
           "type": "array",
@@ -589,10 +597,14 @@
       ],
       "properties": {
         "method": {
-          "const": "icmp-paris"
+          "enum": [
+            "icmp-paris"
+          ]
         },
         "at_least": {
-          "const": true
+          "enum": [
+            true
+          ]
         },
         "af": {
           "enum": [
