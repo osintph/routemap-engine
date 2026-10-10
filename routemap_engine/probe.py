@@ -99,6 +99,23 @@ class NoAddress(ValueError):
     """The target has no address in the family asked for."""
 
 
+class NoRoute(NoAddress):
+    """This machine has no route to the target's address family (typically:
+    no IPv6 on this network). A NoAddress, so every caller that says "no
+    address in that family" says this too."""
+
+
+def check_route(dst: str) -> None:
+    """Raise :class:`NoRoute` when the system has no route to *dst*: asked
+    once, before the first probe, so a trace says why instead of failing on
+    every probe. A UDP socket's connect picks the route and sends nothing."""
+    try:
+        _source_for(dst)
+    except OSError as exc:
+        raise NoRoute(f"This machine has no IPv{family_of(dst)} route to {dst} "
+                      f"({exc.strerror or exc}). Is IPv{family_of(dst)} working on this network?") from None
+
+
 def resolve(target: str, family: str = "auto") -> str:
     """The address to trace for *target*: the system's first choice
     (getaddrinfo order) for "auto", else the first address of family "4"
@@ -631,6 +648,7 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
     """Trace *target* (a validated hostname or address) over IPv4 or IPv6
     (*family*: "auto", "4" or "6"). Returns (text, cancelled, timed_out)."""
     dst = resolve(target, family)
+    check_route(dst)
     max_hops = max(1, min(int(max_hops), MAX_TTL))
     queries = max(1, min(int(queries), MAX_QUERIES))
     wait = max(0.1, min(float(wait), MAX_WAIT_SECONDS))

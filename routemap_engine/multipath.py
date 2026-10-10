@@ -501,5 +501,6 @@ def discover(target: str, *, family: str = "auto", options: Options | None = Non
     if not ok:
         raise RuntimeError(why)
     address = probe.resolve(target, family)
+    probe.check_route(address)
     return Discoverer(target, address, probe.FlowTransport(address), options=options, cancel=cancel,
                       deadline=deadline, on_progress=on_progress).run()
