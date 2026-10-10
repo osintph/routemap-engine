@@ -22,6 +22,7 @@ second definition to keep in step with the first.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 from dataclasses import dataclass, field
@@ -47,10 +48,14 @@ class Route:
     hoiho_ruleset_date: str | None
     origin: dict
     hops: list[dict] = field(default_factory=list)
+    # Path discovery (0.7.0): multipath.Discovery.to_dict() plus each path's
+    # located hops. None for an ordinary trace, and then not in to_dict(), so
+    # FalconEye's output is unchanged.
+    paths: dict | None = None
 
     def to_dict(self) -> dict:
         """The JSON object, keys in the order FalconEye has always sent them."""
-        return {
+        out = {
             "parser": self.parser,
             "parser_label": self.parser_label,
             "target": self.target,
@@ -59,6 +64,9 @@ class Route:
             "origin": dict(self.origin),
             "hops": [dict(h) for h in self.hops],
         }
+        if self.paths is not None:
+            out["paths"] = copy.deepcopy(self.paths)
+        return out
 
     @classmethod
     def from_dict(cls, data: dict) -> "Route":
@@ -67,7 +75,8 @@ class Route:
                    target=data.get("target"), warnings=list(data.get("warnings") or []),
                    hoiho_ruleset_date=data.get("hoiho_ruleset_date"),
                    origin=dict(data.get("origin") or {}),
-                   hops=[dict(h) for h in data.get("hops") or []])
+                   hops=[dict(h) for h in data.get("hops") or []],
+                   paths=copy.deepcopy(data["paths"]) if isinstance(data.get("paths"), dict) else None)
 
     @property
     def loss(self) -> dict:
@@ -177,6 +186,54 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
         origin=origin_block(origin, located),
         hops=located,
     )
+
+
+# What a path's located hop keeps: where it is and how it was placed.
+PATH_HOP_FIELDS = ("hop", "address", "hostname", "lat", "lon", "place", "cc", "source",
+                   "min_rtt_ms", "avg_rtt_ms", "reason")
+
+
+async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
+                        sources: geo.Sources | None = None,
+                        progress: geo.ProgressFn | None = None) -> Route:
+    """Locate a path discovery (:class:`multipath.Discovery`): the Route of
+    every responder at every hop, as for any trace, plus ``paths`` with each
+    path's own located hops. Every source is asked once; each path is placed
+    from the same answers, so a path costs no extra lookups."""
+    if origin is not None:
+        if normalise_origin(*origin) is None:
+            raise ValueError(f"origin {origin!r} is not a latitude, longitude pair")
+        origin = (float(origin[0]), float(origin[1]))
+    parsed = parse_trace(discovery.trace_text())
+    if not parsed.hops:
+        raise TraceParseError("No hops were found in that trace.")
+    hoiho_records, ruleset, ip_records, names = await geo.gather_records(parsed.hops, sources, progress)
+    located = geo.annotate(geo.neighbour_check(geo.locate_hops(parsed.hops, hoiho_records, ip_records,
+                                                               origin)))
+    out = discovery.to_dict()
+    for path, entry in zip(discovery.paths, out["paths"]):
+        hops = []
+        for ttl, (addr, rtt) in enumerate(zip(path.hops, path.rtt_ms), start=1):
+            hop = Hop(hop=ttl, sent=1, lost=0 if addr else 1)
+            if addr:
+                hop.add_address(addr)
+                if names.get(addr):
+                    hop.add_hostname(names[addr])
+                if rtt is not None:
+                    hop.rtts_ms.append(round(rtt, 3))
+            hops.append(hop)
+        placed = geo.locate_hops(hops, hoiho_records, ip_records, origin) if hops else []
+        entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS} for h in placed]
+    return Route(parser=parsed.parser, parser_label=PARSER_LABELS.get(parsed.parser, parsed.parser),
+                 target=discovery.target, warnings=list(parsed.warnings), hoiho_ruleset_date=ruleset,
+                 origin=origin_block(origin, located), hops=located, paths=out)
+
+
+def analyse_paths_sync(discovery, origin: tuple[float, float] | None = None, *,
+                       sources: geo.Sources | None = None,
+                       progress: geo.ProgressFn | None = None) -> Route:
+    """:func:`analyse_paths` for callers without an event loop."""
+    return asyncio.run(analyse_paths(discovery, origin, sources=sources, progress=progress))
 
 
 def analyse_sync(trace, origin: tuple[float, float] | None = None, *,

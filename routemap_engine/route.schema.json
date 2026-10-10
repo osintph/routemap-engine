@@ -55,6 +55,10 @@
       "items": {
         "$ref": "#/$defs/hop"
       }
+    },
+    "paths": {
+      "description": "Path discovery (0.7.0, routemap_engine.multipath): present only for a route made by analyse_paths. Paths found over ICMP are a lower bound (at_least).",
+      "$ref": "#/$defs/paths"
     }
   },
   "$defs": {
@@ -403,6 +407,239 @@
         "ixp": {
           "type": "string",
           "description": "Internet exchange the hop's address belongs to."
+        }
+      }
+    },
+    "path_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hop",
+        "address",
+        "lat",
+        "lon",
+        "source"
+      ],
+      "properties": {
+        "hop": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hostname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/coord_lat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/coord_lon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "place": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "min_rtt_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "avg_rtt_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "flows",
+        "hops",
+        "rtt_ms",
+        "reached",
+        "sent",
+        "lost",
+        "loss_pct",
+        "rtt_to_target_ms"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-P]$"
+        },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          },
+          "maxItems": 64
+        },
+        "hops": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxItems": 30
+        },
+        "rtt_ms": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maxItems": 30
+        },
+        "reached": {
+          "type": "boolean"
+        },
+        "sent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "loss_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rtt_to_target_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "located": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path_hop"
+          },
+          "maxItems": 30
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "at_least",
+        "af",
+        "paths",
+        "per_packet_hops",
+        "probes_sent",
+        "flows",
+        "paths_capped",
+        "stopped_by",
+        "seconds"
+      ],
+      "properties": {
+        "method": {
+          "const": "icmp-paris"
+        },
+        "at_least": {
+          "const": true
+        },
+        "af": {
+          "enum": [
+            4,
+            6
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          },
+          "maxItems": 16
+        },
+        "per_packet_hops": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "probes_sent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1500
+        },
+        "flows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "paths_capped": {
+          "type": "boolean"
+        },
+        "stopped_by": {
+          "enum": [
+            "complete",
+            "budget",
+            "cancel",
+            "deadline",
+            "gap",
+            "max_hops"
+          ]
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0
         }
       }
     }

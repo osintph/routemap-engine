@@ -914,8 +914,21 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
     *sources* defaults to :func:`default_sources`; pass :data:`OFFLINE` for a
     run that contacts nothing.
     """
+    hoiho_records, ruleset, ip_records, _names = await gather_records(hops, sources, progress)
+    located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin)))
+    return {"hops": located, "hoiho_ruleset_date": ruleset, "loss": loss_verdict(located)}
+
+
+async def gather_records(hops: list[Hop], sources: Sources | None = None,
+                         progress: ProgressFn | None = None) -> tuple[dict, str | None, dict, dict]:
+    """Ask every source once for everything *hops* could need:
+    (hoiho records, ruleset date, IP records, reverse-DNS names by address).
+    Fills in missing hostnames on *hops* as a side effect, as before 0.7.0.
+    Path discovery uses the same records for every path it found, so no
+    address is looked up twice."""
     if sources is None:
         sources = default_sources()
+    names: dict = {}
 
     # Fill in the names the source did not give us, so the hostname-first
     # sources have something to work on. Atlas results carry no names at all,
@@ -928,6 +941,7 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
         resolved = await _within(sources.ptr_budget, sources.ptr(unnamed),
                                  "reverse-dns", {}, progress)
         if isinstance(resolved, dict) and resolved:
+            names.update(resolved)
             for hop in hops:
                 if hop.hostnames:
                     continue
@@ -969,9 +983,7 @@ async def resolve(hops: list[Hop], origin: tuple[float, float] | None,
     hoiho_records, ruleset = hoiho_result if isinstance(hoiho_result, tuple) else ({}, None)
     if not isinstance(ip_records, dict):
         ip_records = {}
-
-    located = annotate(neighbour_check(locate_hops(hops, hoiho_records, ip_records, origin)))
-    return {"hops": located, "hoiho_ruleset_date": ruleset, "loss": loss_verdict(located)}
+    return hoiho_records, ruleset, ip_records, names
 
 
 def first_located(located: list[dict]) -> tuple[float, float] | None:
