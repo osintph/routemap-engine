@@ -33,7 +33,8 @@ def _log_blocks(path):
 
 def test_the_sweep_covers_the_engine():
     names = {p.name for p in ENGINE.glob("*.py")}
-    assert {"geo.py", "hoiho.py", "model.py", "runner.py"} <= names
+    assert {"geo.py", "hoiho.py", "model.py", "runner.py", "multipath.py", "probe.py", "atlas.py",
+            "whereami.py"} <= names
 
 
 def test_no_engine_log_call_passes_a_user_value_in_the_clear():
