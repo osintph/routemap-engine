@@ -269,9 +269,11 @@ def with_family(tool: str, argv: list[str], family: int) -> list[str]:
         six = tool_path("traceroute6")
         if not six:
             raise TraceToolMissing("traceroute6 was not found. It ships with macOS in /usr/sbin.")
-        return [six, "-I", *argv[1:]]
+        return [six, *argv[1:-1], "-I", argv[-1]]
     if tool in (TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR):
-        return [argv[0], f"-{family}", *argv[1:]]
+        # Last before the target: every tool takes its options there, and the
+        # user's own flags keep their order.
+        return [*argv[:-1], f"-{family}", argv[-1]]
     return argv
 
 
