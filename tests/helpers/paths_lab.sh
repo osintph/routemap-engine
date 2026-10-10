@@ -6,9 +6,10 @@
 #   runner --- prt --+-- pa --+-- ptg (10.78.9.9, fd78:9::9)
 #                    +-- pb --+
 #
-# prt chooses pa or pb per flow: nftables hashes source, destination and the
-# ICMP identifier and checksum (the fields Paris traceroute holds per flow),
-# marks the packet, and policy routing sends mark 0 to pa, mark 1 to pb.
+# prt chooses pa or pb per flow, from the ICMP checksum (one of the fields
+# routers hash, and one Paris traceroute holds per flow): an odd checksum is
+# marked 1 and policy routing sends mark 0 to pa, mark 1 to pb. (A jhash over
+# several fields was refused by the runner's kernel.)
 # ICMP rate limits are off in every namespace so no answer is held back.
 set -euo pipefail
 command -v nft >/dev/null || sudo apt-get install -y -qq nftables >/dev/null
@@ -37,8 +38,8 @@ ns prt nft -f - <<'NFT'
 table inet paths {
   chain pre {
     type filter hook prerouting priority mangle; policy accept;
-    ip daddr 10.78.9.9 ip protocol icmp meta mark set jhash ip saddr . ip daddr . icmp id . icmp checksum mod 2 seed 0x5a5a
-    ip6 daddr fd78:9::9 meta l4proto ipv6-icmp meta mark set jhash ip6 saddr . ip6 daddr . icmpv6 id . icmpv6 checksum mod 2 seed 0x5a5a
+    ip daddr 10.78.9.9 icmp checksum & 0x0001 == 0x0001 meta mark set 1
+    ip6 daddr fd78:9::9 icmpv6 checksum & 0x0001 == 0x0001 meta mark set 1
   }
 }
 NFT

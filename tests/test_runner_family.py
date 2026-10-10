@@ -7,13 +7,13 @@ from routemap_engine import probe, runner
 
 
 @pytest.mark.parametrize("plat,tool,family,expected", [
-    ("windows", runner.TOOL_TRACERT, 6, ["tracert.exe", "-6", "-h", "30", "x"]),
-    ("windows", runner.TOOL_TRACERT, 4, ["tracert.exe", "-4", "-h", "30", "x"]),
-    ("linux", runner.TOOL_TRACEROUTE, 6, ["/usr/bin/traceroute", "-6", "-m", "30", "x"]),
-    ("linux", runner.TOOL_MTR, 6, ["/usr/bin/mtr", "-6", "-m", "30", "x"]),
-    ("linux", runner.TOOL_MTR, 4, ["/usr/bin/mtr", "-4", "-m", "30", "x"]),
+    ("windows", runner.TOOL_TRACERT, 6, ["tracert.exe", "-h", "30", "-6", "x"]),
+    ("windows", runner.TOOL_TRACERT, 4, ["tracert.exe", "-h", "30", "-4", "x"]),
+    ("linux", runner.TOOL_TRACEROUTE, 6, ["/usr/bin/traceroute", "-m", "30", "-6", "x"]),
+    ("linux", runner.TOOL_MTR, 6, ["/usr/bin/mtr", "-m", "30", "-6", "x"]),
+    ("linux", runner.TOOL_MTR, 4, ["/usr/bin/mtr", "-m", "30", "-4", "x"]),
     ("macos", runner.TOOL_TRACEROUTE, 4, ["/usr/sbin/traceroute", "-m", "30", "x"]),
-    ("macos", runner.TOOL_TRACEROUTE, 6, ["/usr/sbin/traceroute6", "-I", "-m", "30", "x"]),
+    ("macos", runner.TOOL_TRACEROUTE, 6, ["/usr/sbin/traceroute6", "-m", "30", "-I", "x"]),
 ])
 def test_system_tools_get_the_family_flag_and_macos_uses_traceroute6(monkeypatch, plat, tool, family, expected):
     monkeypatch.setattr(runner, "_platform", lambda: plat)
@@ -56,4 +56,4 @@ def test_without_an_ipv6_prober_the_system_tool_runs_with_its_ipv6_flag(monkeypa
     monkeypatch.setattr(runner.subprocess, "Popen", popen)
     with pytest.raises(Done):
         runner.run_trace("dual.example")
-    assert ran["argv"][:2] == ["/usr/bin/traceroute", "-6"]
+    assert ran["argv"][0] == "/usr/bin/traceroute" and ran["argv"][-2:] == ["-6", "dual.example"]
