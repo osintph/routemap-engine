@@ -53,6 +53,15 @@ Keep a Changelog format; this project uses Semantic Versioning.
   position gets `atlas.PROBE_SLACK_KM`, 5 km. In measurement 221303797 the
   IP database put hop 1 (0.406 ms, so at most 40.6 km) 48 km from the probe,
   and 300 km of slack let it through.
+- **OVHcloud in the carrier site-code table**, from OVH's own network
+  weathermap: 38 site codes (Strasbourg, Milan, Marseille, Singapore, ...).
+  In the real reverse trace OVH's backbone was placed by the IP database in
+  London, Warsaw and Hong Kong; its router names put it in Strasbourg, Milan,
+  Marseille and Singapore, each inside its round trip. Site codes may carry
+  digits (OVH's metro codes, `sin1`). `sitegen --only CARRIER` refreshes one
+  carrier and keeps the others' rows.
+- **Reverse traces ask for 2,000 ms per reply** (`response_timeout`, RIPE's
+  default 4,000): a silent hop costs 6 s instead of 12. The cost is unchanged.
 - `probe.NoRoute` (a `NoAddress`): a trace, path discovery or Live on a
   machine with no route for the family says so once, before the first probe.
 

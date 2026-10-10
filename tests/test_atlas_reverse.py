@@ -75,6 +75,14 @@ def test_reverse_targets_the_public_ip_of_the_traced_family(ip, af):
     assert body["probes"] == [{"type": "probes", "value": "4242", "requested": 1}] and body["is_oneoff"]
 
 
+def test_a_reverse_trace_asks_for_2000_ms_per_reply_and_a_forward_one_keeps_ripes_default():
+    rec = Recorder({})
+    asyncio.run(client(rec).create_reverse("193.99.144.80", 1, consent=True))
+    assert rec.calls[-1][3]["definitions"][0]["response_timeout"] == atlas.REVERSE_RESPONSE_TIMEOUT_MS == 2000
+    asyncio.run(client(rec).create("example.net", 1))
+    assert "response_timeout" not in rec.calls[-1][3]["definitions"][0]
+
+
 def test_reverse_costs_60_credits_from_the_body_sent():
     rec = Recorder({})
     asyncio.run(client(rec).create_reverse("193.99.144.80", 1, consent=True))

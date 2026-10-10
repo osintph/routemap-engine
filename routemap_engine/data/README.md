@@ -69,6 +69,25 @@ physics bound as every other source in `routemap_engine/geo.py`: if the hostname
 says Hong Kong and the round trip cannot reach Hong Kong, the hop is not placed
 in Hong Kong.
 
+### The carriers in it
+
+- **Arelion (AS1299, Twelve99)**: the router list its looking glass embeds,
+  <https://lg.twelve99.net/>, router short name to "City (facility)".
+- **OVHcloud (AS16276)**: OVH's network weathermap,
+  <http://weathermap.ovh.net/> (the https address does not answer). Its menu
+  names every PoP and data centre with its city (`pop_mrs` "Marseille",
+  `core_sxb1-sbg` "Strasbourg", `pop_ava1` "Milan AVA1"), and each map draws
+  that site's routers by name. A map also draws neighbouring routers, so a
+  router counts for a site only when its name starts with that site's code
+  (first or second part, `mil-ava1-sbb1-8k` on "Milan AVA1"); maps labelled
+  only "AZ n" are skipped. The site code is the router name's first part.
+  Hostnames are read only under OVH zones seen in a real trace (`.fr.eu`,
+  `.it.eu`, `.sgp.asia`, RIPE Atlas measurement 221303797); another zone is
+  added when it is seen. Towns GeoNames does not list (Vint Hill, Erith,
+  Gravelines, Beauharnois) are left out; Limburg is GeoNames' "Limburg an der
+  Lahn". Refresh one carrier without touching the others:
+  `python -m routemap_engine.sitegen --only ovh`.
+
 ### Adding a carrier
 
 1. Find the carrier's **own published** router list: a looking glass that names

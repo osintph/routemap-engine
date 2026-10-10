@@ -67,6 +67,9 @@ CITY_ALIASES = {
     "merida": "Mérida",
     "poznan": "Poznań",
     "zurich": "Zürich",
+    # OVH's data centre "Limburg" (under Germany on its weathermap): GeoNames
+    # names the same town by its full name.
+    "limburg": "Limburg an der Lahn",
 }
 
 
@@ -107,6 +110,62 @@ def fetch_arelion() -> dict:
     return routers
 
 
+OVH_WEATHERMAP = "http://weathermap.ovh.net/"
+
+
+def ovh_sites(index: str) -> list[tuple[str, list[str], str]]:
+    """The single-site maps on OVH's weathermap index, as (map id, the site
+    codes its own routers start with, OVH's label). A PoP map ``pop_<code>``
+    is one site; a data-centre map ``core_<metro>-<site>`` is one site under
+    both codes. Maps OVH labels only "AZ n" (no city) and the backbone, DC
+    group and service maps are not single sites and are skipped."""
+    sites = []
+    for map_id, label in re.findall(r'<a class="hash" href="#([^"]+)">([^<]*)</a>', index):
+        label = html.unescape(label).strip()
+        if re.fullmatch(r"AZ \d+", label):
+            continue
+        m = re.fullmatch(r"pop_([a-z]+\d*)", map_id)
+        if m:
+            sites.append((map_id, [m.group(1)], label))
+            continue
+        m = re.fullmatch(r"core_([a-z]+\d*)-([a-z]+\d*)", map_id)
+        if m:
+            sites.append((map_id, [m.group(1), m.group(2)], label))
+    return sites
+
+
+def ovh_routers(svg: str) -> set[str]:
+    """Router names drawn on one weathermap SVG (its <text class="object">)."""
+    return set(re.findall(r'<text[^>]*class="object"[^>]*>([a-z0-9][a-z0-9-]+)</text>', svg))
+
+
+def fetch_ovh() -> dict:
+    """OVHcloud (AS16276).
+
+    OVH's network weathermap (http://weathermap.ovh.net/; the https address
+    does not answer) is OVH drawing its own network: its menu names every
+    PoP and data centre with its city ("pop_mrs" = "Marseille", "core_sxb1-sbg"
+    = "Strasbourg", "pop_ava1" = "Milan AVA1"), and each map draws that
+    site's routers by name ("mrs-mrs1-sbb1-8k", "sbg-g1-nc5"). A map also
+    draws neighbouring routers of other sites, so a router counts for a site
+    only when its name starts with that site's code (first or second part:
+    "mil-ava1-sbb1-8k" on "Milan AVA1"). The rest of the router name is not
+    used.
+    """
+    index = fetch(OVH_WEATHERMAP)
+    routers: dict = {}
+    for map_id, codes, label in ovh_sites(index):
+        svg = fetch(f"{OVH_WEATHERMAP}maps/weathermap_{map_id}.svg")
+        for router in ovh_routers(svg):
+            parts = router.split("-")
+            if parts[0] in codes or (len(parts) > 1 and parts[1] in codes):
+                routers.setdefault(router, label)
+    if not routers:
+        raise SystemExit("no routers found on OVH's weathermap; the page layout changed and "
+                         "this parser needs updating")
+    return routers
+
+
 CARRIERS = [
     {
         "id": "arelion",
@@ -118,6 +177,17 @@ CARRIERS = [
         # "hnk-b4" -> "hnk". The router name is <site>-b<N>; the site code is
         # everything before that trailing -b<N>.
         "code_of": lambda router: re.sub(r"-b+\d+$", "", router.split(".")[0]),
+    },
+    {
+        "id": "ovh",
+        "name": "OVHcloud (AS16276)",
+        "source_ref": "ovh-weathermap",
+        "source_url": OVH_WEATHERMAP,
+        "source_kind": "operator network weathermap (sites and router names published by the operator)",
+        "fetch": fetch_ovh,
+        # "mrs-mrs1-sbb1-8k" -> "mrs", "sin1-sgcs2-g1-nc5" -> "sin1": the site
+        # code is the router name's first part.
+        "code_of": lambda router: router.split("-", 1)[0],
     },
 ]
 
@@ -152,9 +222,19 @@ def fold(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", stripped.lower())
 
 
-def city_of(label: str) -> str:
-    """"Hong Kong (MEGA-i)" -> "Hong Kong"."""
-    return re.sub(r"\s*\(.*$", "", label).strip()
+def city_of(label: str, cities: dict | None = None) -> str:
+    """"Hong Kong (MEGA-i)" -> "Hong Kong"; "Milan AVA1" -> "Milan" (the
+    longest leading run of words that is a known city, when *cities* is given:
+    OVH writes the facility after the city without brackets)."""
+    city = re.sub(r"\s*\(.*$", "", label).strip()
+    if cities is None:
+        return city
+    words = city.split()
+    for n in range(len(words), 0, -1):
+        candidate = " ".join(words[:n])
+        if fold(CITY_ALIASES.get(candidate.lower(), candidate)) in cities:
+            return candidate
+    return city
 
 
 # ---------------------------------------------------------------------- main --
@@ -165,19 +245,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", type=pathlib.Path, default=OUT,
                         help="where to write the table (default: the bundled copy)")
+    parser.add_argument("--only", choices=[c["id"] for c in CARRIERS],
+                        help="refresh one carrier; every other carrier's rows are kept as they are")
     args = parser.parse_args(argv)
     out = args.out
 
     cities = load_cities()
     rows, unresolved = [], []
+    if args.only and OUT.exists():
+        for line in OUT.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            if line and not line.startswith("#") and len(parts) == 7 and parts[0] != args.only:
+                rows.append(tuple(parts))
 
     for carrier in CARRIERS:
+        if args.only and carrier["id"] != args.only:
+            continue
         routers = carrier["fetch"]()
         print(f"{carrier['id']}: {len(routers)} routers from {carrier['source_url']}")
         seen = {}
         for router, label in sorted(routers.items()):
             code = carrier["code_of"](router)
-            city = city_of(label)
+            city = city_of(label, cities)
             key = fold(CITY_ALIASES.get(city.lower(), city))
             hit = cities.get(key)
             if not hit:
