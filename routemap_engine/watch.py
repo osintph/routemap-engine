@@ -45,14 +45,14 @@ not get a fair wait. A cycle whose wall time or monotonic time runs well past
 its schedule is thrown away whole: nothing in it counts as sent or lost, the
 plot shows a gap, and the session records the gap with its start and end.
 
-IPv4 only, as the built-in prober. RIPE Atlas is never used here.
+IPv4 or IPv6 (0.7.0), as the built-in prober; ``WatchOptions.family``
+chooses for a dual-stack name. RIPE Atlas is never used here.
 """
 from __future__ import annotations
 
 import ipaddress
 import math
 import secrets
-import socket
 import threading
 import time
 from collections import deque
@@ -97,6 +97,7 @@ class WatchOptions:
     max_hops: int = probe.MAX_HOPS
     duration: float = DURATION_DEFAULT
     max_cycles: int | None = None
+    family: str = "auto"                 # "auto", "4" or "6", as probe.resolve
 
     def clamped(self) -> "WatchOptions":
         """The same options with every value forced into its allowed range."""
@@ -104,7 +105,8 @@ class WatchOptions:
         return WatchOptions(interval=_clamp(self.interval, INTERVAL_MIN, INTERVAL_MAX, INTERVAL_DEFAULT),
                             max_hops=int(_clamp(self.max_hops, 1, probe.MAX_HOPS, probe.MAX_HOPS)),
                             duration=_clamp(self.duration, DURATION_MIN, DURATION_MAX, DURATION_DEFAULT),
-                            max_cycles=cycles)
+                            max_cycles=cycles,
+                            family=self.family if self.family in probe.FAMILIES else "auto")
 
 
 # --------------------------------------------------------------- statistics ---
@@ -332,7 +334,7 @@ class Watch:
         self.target = target
         self.on_cycle = on_cycle
         self.probe_fn = probe_fn or probe._probe
-        self.resolve = resolve or socket.gethostbyname
+        self.resolve = resolve or (lambda target: probe.resolve(target, self.options.family))
         self.wall, self.mono = wall, mono
         self._stop = threading.Event()
         self._running = threading.Event()
@@ -363,12 +365,7 @@ class Watch:
 
     # the loop
     def run(self) -> Session:
-        dst = self.resolve(self.target)
-        try:
-            ipaddress.IPv4Address(dst)
-        except ValueError:
-            raise ValueError(f"{self.target} resolves to {dst}, an IPv6 address; continuous mode "
-                             "needs an IPv4 address for now") from None
+        dst = str(ipaddress.ip_address(self.resolve(self.target)))
         opts = self.options
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
         tracker = PathTracker()

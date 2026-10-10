@@ -259,12 +259,28 @@ def test_the_session_stops_at_its_duration():
     assert s.stopped_by == "duration" and s.cycles == 300
 
 
-def test_ipv6_is_refused():
+def test_live_runs_over_ipv6():
+    """Before 0.7.0 an IPv6 target was refused; now the same session runs."""
     clock = Clock()
-    w = watch.Watch("example.net", probe_fn=lambda *a: probe.Reply(None, None),
-                    resolve=lambda _t: "2001:db8::1", wall=clock.wall, mono=clock.mono, sleep=clock.sleep)
-    with pytest.raises(ValueError, match="needs an IPv4 address"):
-        w.run()
+    hops = ["2001:db8:1::1", "2001:db8:2::1", "2001:db8:9::9"]
+
+    def probe_fn(dst, ttl, seq, wait):
+        assert dst == "2001:db8:9::9"
+        return probe.Reply(hops[min(ttl, 3) - 1], 10.0 * ttl, reached=ttl >= 3)
+    w = watch.Watch("example.net", watch.WatchOptions(max_cycles=5), probe_fn=probe_fn,
+                    resolve=lambda _t: "2001:db8:9::9", wall=clock.wall, mono=clock.mono, sleep=clock.sleep)
+    s = w.run()
+    assert s.cycles == 5 and s.reached_hop == 3 and s.address == "2001:db8:9::9"
+    assert [h["addresses"] for h in s.hops()] == [[a] for a in hops]
+
+
+def test_the_family_option_reaches_the_resolver(monkeypatch):
+    asked = []
+    monkeypatch.setattr(probe, "resolve", lambda target, family="auto": asked.append(family) or "192.0.2.6")
+    w = watch.Watch("example.net", watch.WatchOptions(max_cycles=1, family="4"),
+                    probe_fn=lambda *a: probe.Reply(None, None))
+    assert w.resolve("example.net") == "192.0.2.6" and asked == ["4"]
+    assert watch.WatchOptions(family="7").clamped().family == "auto"
 
 
 # -------------------------------------------------------------- sleep, pause --

@@ -89,6 +89,7 @@ class TraceToolMissing(RuntimeError):
 class TraceOptions:
     tool: str = "auto"                     # "auto" or one of TOOLS
     flags: list[str] | None = None         # None: DEFAULT_FLAGS[tool]
+    family: str = "auto"                   # "auto" (the system's order), "4" or "6"
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     cancel: threading.Event | None = None
     on_line: Callable[[str], None] | None = None
@@ -256,22 +257,45 @@ def _decode(raw: bytes) -> str:
         return raw.decode("utf-8", "replace")
 
 
+def with_family(tool: str, argv: list[str], family: int) -> list[str]:
+    """*argv* for a system tool, held to IPv4 or IPv6 so the tool traces the
+    address the engine resolved. tracert /4 /6 (Microsoft's tracert reference),
+    Linux traceroute -4 -6 and mtr -4 -6 (their man pages). macOS traceroute
+    has no IPv6 at all; traceroute6 does it, here with -I (ICMP echo, like the
+    built-in prober; unprivileged on macOS 27, measured 10 Oct 2026)."""
+    if tool == TOOL_TRACEROUTE and _platform() == "macos":
+        if family != 6:
+            return argv
+        six = tool_path("traceroute6")
+        if not six:
+            raise TraceToolMissing("traceroute6 was not found. It ships with macOS in /usr/sbin.")
+        return [six, "-I", *argv[1:]]
+    if tool in (TOOL_TRACERT, TOOL_TRACEROUTE, TOOL_MTR):
+        return [argv[0], f"-{family}", *argv[1:]]
+    return argv
+
+
 def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     """Run one trace and return what the tool printed.
 
     Blocking: call it from a worker thread in the GUI. ``options.on_line`` is
-    called from this thread for every line as it arrives.
+    called from this thread for every line as it arrives. The address family
+    is decided here, once (``options.family``), and every tool is held to it.
+    Raises ``probe.NoAddress`` when the target has no address in that family.
     """
+    from routemap_engine import probe
     options = options or TraceOptions()
     tool, executable = pick_tool(options.tool)
     argv = build_argv(tool, executable, target, options.flags)
+    family = probe.family_of(probe.resolve(validate_target(target), options.family))
     if tool == TOOL_ICMP:
-        result = _run_builtin(argv, options)
+        result = _run_builtin(argv, options, family)
         if result is not None:
             return result
-        # IPv6 target: the system tool for this platform.
+        # The built-in prober cannot run for this family here: the system tool.
         tool, executable = pick_tool(TOOL_TRACERT if _platform() == "windows" else TOOL_TRACEROUTE)
         argv = build_argv(tool, executable, target, None)
+    argv = with_family(tool, argv, family)
 
     env = dict(os.environ)
     env.update(options.env)
@@ -333,22 +357,18 @@ def _flag(flags: list[str], name: str, default: float) -> float:
         return default
 
 
-def _run_builtin(argv: list[str], options: TraceOptions) -> TraceResult | None:
-    """The built-in ICMP prober with the -m/-q/-w values in *argv*. None for an
-    IPv6 target, which the system tool handles."""
-    import ipaddress
-    import socket
-
+def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4) -> TraceResult | None:
+    """The built-in ICMP prober with the -m/-q/-w values in *argv*, over
+    *family*. None when the prober cannot open a socket of that family here
+    (Linux without ping_group_range, say), so the system tool runs instead."""
     from routemap_engine import probe
     target, flags = argv[-1], argv[1:-1]
-    try:
-        ipaddress.IPv4Address(socket.gethostbyname(target))
-    except (OSError, ValueError):
+    if not probe.available(family)[0]:
         return None
     started = time.monotonic()
     text, cancelled, timed_out = probe.trace(
         target, max_hops=int(_flag(flags, "-m", probe.MAX_HOPS)), queries=int(_flag(flags, "-q", probe.QUERIES)),
         wait=_flag(flags, "-w", probe.WAIT_SECONDS), on_line=options.on_line, cancel=options.cancel,
-        deadline=started + options.timeout)
+        deadline=started + options.timeout, family=str(family))
     return TraceResult(text=text, tool=TOOL_ICMP, argv=argv, returncode=0, cancelled=cancelled,
                        timed_out=timed_out, seconds=round(time.monotonic() - started, 2))
