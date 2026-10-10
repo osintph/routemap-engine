@@ -6,8 +6,8 @@ import asyncio
 import jsonschema
 
 from routemap_engine import OFFLINE, Sources, analyse_paths, multipath, schema
-from tests.helpers.lab import Lab
-from tests.test_engine_api import _fake_hoiho, _no_ptr
+from helpers.lab import Lab
+from test_engine_api import _fake_hoiho, _no_ptr
 
 DST = "193.99.144.80"
 TOPO = ["192.168.1.1", "100.64.0.1", ("branch", [["62.115.186.138", "62.115.112.222"],

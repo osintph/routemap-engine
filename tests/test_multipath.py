@@ -7,7 +7,7 @@ import random
 import pytest
 
 from routemap_engine import multipath, probe
-from tests.helpers.lab import Lab
+from helpers.lab import Lab
 
 DST = "192.0.2.9"
 
