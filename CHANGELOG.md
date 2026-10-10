@@ -2,6 +2,55 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+- **Path discovery, `routemap_engine.multipath`.** `discover(target)` finds
+  the paths a per-flow load balancer can send this machine's packets along,
+  each with its own per-hop latency and, from ten pings of one of its flows,
+  its own loss and latency to the target. Paris traceroute keeps every probe
+  of a flow on one path (its identifier and checksum stay fixed, two payload
+  bytes absorb the sequence number; Augustin et al., IMC 2006); flows are
+  added at each hop until the MDA stopping rule is met at 95% (Veitch et
+  al., INFOCOM 2009, Table I: 9 flows for one responder, 17 for two, ...);
+  per-packet balancing is detected with the MDA's six-probe test and does
+  not split paths. Paths found over ICMP are a lower bound (`at_least`).
+- **Hard caps for discovery**, which a caller can lower and never raise: 20
+  probes a second (scamper's default rate), 1,500 probes per discovery with
+  the pings, 64 flows, 3 silent hops, 30 hops. A router that answers fewer
+  than half its probes draws no more flows once a round found nothing new.
+- **`analyse_paths(discovery)`** places every responder as any trace and each
+  path's own hops from the same answers, so a path costs no extra lookups.
+  `Route.paths` and the schema's `paths` field carry the result; an ordinary
+  route has no `paths` key, so its output is unchanged.
+- **IPv6 in the built-in prober** on macOS, Linux (ICMPv6 datagram sockets,
+  IPV6_UNICAST_HOPS, IPV6_RECVERR) and Windows (`Icmp6SendEcho2`), and in
+  continuous mode, which refused IPv6 before.
+- **A chosen address family.** `TraceOptions.family` and `WatchOptions.family`
+  ("auto", "4", "6"); `probe.resolve()` follows getaddrinfo's order for
+  "auto". The system tools are held to the same family: `-4`/`-6` for
+  tracert, Linux traceroute and mtr, `traceroute6 -I` on macOS (its
+  traceroute has no IPv6).
+- **Reverse traces via RIPE Atlas.** `Atlas.select_reverse_probe()` picks a
+  connected probe in the destination's AS, then its country, nearest the
+  destination and never in the user's own AS; `Atlas.create_reverse()`
+  traces back to the user's public address, runs only with `consent=True`,
+  refuses a private address, and costs the same 60 credits (Paris on, 16
+  variations, RIPE's default).
+- `whereami.public_ip(family=)` and `locate_me(family=)` ask over IPv4 or
+  IPv6, so a dual-stack machine gets the address of the traced family.
+
+### Changed
+- **Special-purpose addresses follow the IANA registries row by row** and no
+  longer depend on the Python version's tables: 2001:1::3 (DNS-SD SRP
+  anycast) is now looked up, 192.88.99.0/24 (the deprecated 6to4 relay
+  block) no longer is. Every registry row is tested.
+- `Atlas.select_probe()` and `select_reverse_probe()` ask only for probes
+  RIPE marks as working over the traced family (`system-ipv4-works`,
+  `system-ipv6-works`); `select_probe()` takes `af`.
+- `geo.resolve()` is now `gather_records()` plus placement; its result is
+  unchanged.
+
 ## [0.6.0] - 2026-10-10
 
 Published 2026-10-10 to PyPI and GitHub Releases.
