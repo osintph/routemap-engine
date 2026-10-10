@@ -366,6 +366,8 @@ class Watch:
     # the loop
     def run(self) -> Session:
         dst = str(ipaddress.ip_address(self.resolve(self.target)))
+        if self.probe_fn is probe._probe:
+            probe.check_route(dst)        # a scripted probe function has no routes to check
         opts = self.options
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
         tracker = PathTracker()

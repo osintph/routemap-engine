@@ -144,3 +144,35 @@ def test_windows_says_why_it_cannot_hold_a_flow(monkeypatch):
     monkeypatch.setattr(probe.sys, "platform", "win32")
     ok, why = probe.flow_available()
     assert not ok and "identifier and sequence number" in why
+
+
+def test_no_route_for_the_family_is_one_clear_error_before_any_probe(monkeypatch):
+    """Found running the IPv6 release check on a machine without IPv6: every
+    probe raised OSError "No route to host" out of the trace. Now the trace,
+    a path discovery and Live say so once, before the first probe."""
+    from routemap_engine import multipath, watch
+    sent = []
+
+    class NoRouteUDP:
+        def __init__(self, *a):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def connect(self, addr):
+            raise OSError(65, "No route to host")
+    monkeypatch.setattr(probe.socket, "socket", NoRouteUDP)
+    monkeypatch.setattr(probe, "resolve", lambda target, family="auto": DST6)
+    monkeypatch.setattr(probe, "_probe", lambda *a: sent.append(a))
+    with pytest.raises(probe.NoRoute, match="no IPv6 route"):
+        probe.trace("example.net", family="6")
+    monkeypatch.setattr(multipath, "available", lambda: (True, ""))
+    with pytest.raises(probe.NoAddress, match="no IPv6 route"):
+        multipath.discover("example.net", family="6")
+    with pytest.raises(probe.NoRoute):
+        watch.Watch("example.net", watch.WatchOptions(max_cycles=1)).run()
+    assert sent == []
