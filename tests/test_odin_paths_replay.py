@@ -224,3 +224,16 @@ def test_2_a_hop_with_several_routers_is_placed_by_its_own_router():
             seen.setdefault(h["address"], set()).add((h.get("place"), h.get("source")))
     assert not {a: v for a, v in seen.items() if len(v) > 1}
     assert seen["62.115.140.40"] == {("Marseille, FR", "site-code")}, seen["62.115.140.40"]
+
+
+def test_8_a_paths_hop_keeps_the_ip_databases_provider(run):
+    """The app labels an IP database placement by provider ("ip-db (DB-IP)");
+    a path's hop lost it and read "RIPEstat, online" beside its own row."""
+    net, d, _ = run
+
+    async def ip_db(addresses):
+        return {a: {"lat": 50.11, "lon": 8.68, "city": "Frankfurt", "cc": "DE", "provider": "dbip"}
+                for a in addresses if a.startswith("82.98.")}
+    route = asyncio.run(analyse_paths(d, (14.6, 121.0), sources=Sources(hoiho=None, ip_db=ip_db, ptr=None)))
+    located = [h for p in route.paths["paths"] for h in p["located"] if (h.get("address") or "").startswith("82.98.")]
+    assert located and all(h.get("ip_provider") == "dbip" for h in located if h.get("source") == "ip-db")
