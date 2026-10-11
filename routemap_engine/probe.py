@@ -679,7 +679,8 @@ class FlowTransport:
         self.dst = dst
         self.af = family_of(dst)
         self.linux = sys.platform.startswith("linux")
-        self.src = _source_for(dst) if self.af == 6 else None
+        self.bind_src = _source_for(dst)
+        self.src = self.bind_src if self.af == 6 else None
         self._socks: dict[int, socket.socket] = {}
         self._idents: dict[int, int] = {}
         self._base = secrets.randbelow(0x8000)
@@ -695,12 +696,13 @@ class FlowTransport:
         sock = self._socks.get(flow)
         if sock is None:
             sock = _icmp_socket(self.af)
+            # Bound to the routed source address, never every interface (the
+            # kernel picks the port, which is the ICMP identifier).
             if self.af == 6:
                 sock.setsockopt(socket.IPPROTO_IPV6, IPV6_RECVERR, 1)
-                sock.bind(("::", 0))
             else:
                 sock.setsockopt(socket.IPPROTO_IP, IP_RECVERR, 1)
-                sock.bind(("0.0.0.0", 0))
+            sock.bind((self.bind_src, 0))
             sock.setblocking(False)
             self._socks[flow] = sock
             self._idents[flow] = sock.getsockname()[1]

@@ -64,3 +64,15 @@ def test_probes_leave_from_the_routed_interface_not_another(dst, log):
     assert {line.split()[1] for line in new} == {str(t.sport(5))}
     assert not peers & (set(family) - {routed})
     t.close()
+
+
+@pytest.mark.parametrize("dst", ["10.78.9.9", "fd78:9::9"])
+def test_linux_icmp_flow_sockets_are_bound_to_the_routed_address(dst):
+    """The ICMP flow prober (Linux, one socket per flow) binds to the same
+    routed address, not every interface."""
+    t = probe.FlowTransport(dst)
+    try:
+        sock = t._sock(0)
+        assert sock.getsockname()[0] == probe._source_for(dst)
+    finally:
+        t.close()
