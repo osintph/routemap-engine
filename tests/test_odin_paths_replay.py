@@ -144,3 +144,39 @@ def test_3_silences_at_the_targets_hop_do_not_move_the_target():
     assert rows == true_ends, (rows, true_ends)
     for p in d.paths:
         assert p.hops.count(odin_net.TARGET) == 1, (p.id, p.hops)
+
+
+class _Retransmits(odin_net.Net):
+    """The 0.4.0-beta.2 test build on ODIN: the target ignored some first SYNs
+    and Windows sent them again about 1 s later, so the answer came 1.25 s
+    after the probe (13a 808.5 ms, 14a 1322.1 ms in the hop table, against
+    about 250 ms for the paths)."""
+
+    def __init__(self):
+        super().__init__()
+        self.seen: set[int] = set()
+
+    def answer(self, sock):
+        flow = sock.bound[1] - self.transport._base
+        end = max(odin_net.PATHS[odin_net.letter_of(flow)])
+        if sock.ttl >= end and flow % 3 == 0 and flow not in self.seen:
+            self.seen.add(flow)
+            sock.error, sock.ready_at = 0, self.clock.t + 1.25      # the retransmission answered
+            return
+        super().answer(sock)
+
+
+def test_a_a_retransmitted_answer_does_not_time_the_hop():
+    import time
+    from routemap_engine import probe
+    net = _Retransmits()
+    try:
+        d = multipath.Discoverer("heise.de", odin_net.TARGET, net.make_transport(), clock=net.clock,
+                                 deadline=net.clock() + 3600).run()
+    finally:
+        probe.time = time
+    target_rtts = [r for (ttl, a), rs in d.rtts.items() if a == odin_net.TARGET for r in rs]
+    assert target_rtts and max(target_rtts) <= 1000.0, sorted(target_rtts)[-5:]
+    for line in d.trace_text().splitlines()[1:]:
+        if odin_net.TARGET in line:
+            assert all(float(x) < 1000 for x in __import__("re").findall(r"(\d+\.\d+) ms", line)), line
