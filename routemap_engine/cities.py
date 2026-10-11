@@ -5,7 +5,10 @@ WHAT IT IS AND WHERE IT CAME FROM
 ---------------------------------
 ``routemap_engine/data/cities.tsv`` is GeoNames' ``cities15000`` dump (every
 populated place above 15,000 people, 34,152 rows), trimmed to the seven columns
-this feature uses and with the coordinates rounded to two decimal places.
+this feature uses and with the coordinates rounded to two decimal places, plus
+four smaller places where OVHcloud has data centres, from the same GeoNames
+dumps (cities500: Gravelines, Beauharnois, Erith; US.txt: Vint Hill Park), so
+the carrier site-code table can name them: 34,156 rows.
 
 Licence, checked against https://download.geonames.org/export/dump/readme.txt
 on 2026-10-03, which states: "This work is licensed under a Creative Commons

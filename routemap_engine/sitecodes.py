@@ -71,12 +71,15 @@ CARRIERS = {
     },
     "ovh": {
         "name": "OVHcloud (AS16276)",
-        # OVH's backbone routers answer reverse DNS under these zones, seen in a
-        # real trace (RIPE Atlas measurement 221303797, 11 Oct 2026):
-        # be101.sbg-g1-nc5.fr.eu, mil-ava1-sbb1-8k.it.eu,
-        # sin1-sgcs2-g1-nc5.sgp.asia. Only zones seen in a real trace are
-        # listed; another country's zone is added when one is seen.
-        "suffixes": (".fr.eu", ".it.eu", ".sgp.asia"),
+        # OVH's backbone routers answer reverse DNS under these zones, each seen
+        # in a real trace: RIPE Atlas measurement 221303797 (be101.sbg-g1-nc5
+        # .fr.eu, mil-ava1-sbb1-8k.it.eu, sin1-sgcs2-g1-nc5.sgp.asia), and
+        # traces on 11 Oct 2026 to OVH's own speed-test hosts in Gravelines,
+        # Erith, Beauharnois and Vint Hill (be102.lil2-gra1-sbb1-nc5.fr.eu,
+        # be101.lon1-eri1-g1-nc5.uk.eu, be102.bhs-g1-nc5.qc.ca,
+        # vl1332.was1-vin1-g1-nc5.wa.us, nyc-ny9-sbb1-8k.ny.us). Only zones
+        # seen in a real trace are listed; another is added when one is seen.
+        "suffixes": (".fr.eu", ".it.eu", ".uk.eu", ".sgp.asia", ".qc.ca", ".wa.us", ".ny.us"),
         "exclude": (),
         # "be101.sbg-g1-nc5" leaves "sbg-g1-nc5" as the label; the site code is
         # the router name's first part ("sbg", "sin1").

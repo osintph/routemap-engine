@@ -115,3 +115,31 @@ def test_ovh_hops_are_placed_by_ovhs_own_site_names_and_pass_the_round_trip_chec
         h = by_hop[hop]
         assert h["source"] == "site-code" and h["place"].startswith(city), h
         assert h["distance_km"] <= h["rtt_budget_km"], h
+
+
+def test_ovhs_large_data_centres_are_placed_by_their_own_names():
+    """Gravelines, Erith, Beauharnois and Vint Hill are in the bundled town
+    list (GeoNames) and their routers in the site-code table (OVH's
+    weathermap); placed from Frankfurt, each inside its round trip."""
+    names = {"141.94.30.1": "be102.lil2-gra1-sbb1-nc5.fr.eu", "213.186.32.253": "be101.lon1-eri1-g1-nc5.uk.eu",
+             "198.27.73.204": "be102.bhs-g1-nc5.qc.ca", "178.32.135.211": "vl1332.was1-vin1-g1-nc5.wa.us"}
+    text = ("traceroute to x (178.32.135.211), 30 hops max\n"
+            " 1  141.94.30.1  9.0 ms\n 2  213.186.32.253  12.0 ms\n"
+            " 3  198.27.73.204  88.0 ms\n 4  178.32.135.211  95.0 ms\n")
+
+    async def ptr(addresses):
+        return {a: names[a] for a in addresses if a in names}
+    route = asyncio.run(analyse(text, ORIGIN, origin_slack_km=atlas.PROBE_SLACK_KM,
+                                sources=Sources(hoiho=None, ip_db=None, ptr=ptr)))
+    got = {h["hop"]: h for h in route.hops}
+    for hop, place in {1: "Gravelines, FR", 2: "Erith, GB", 3: "Beauharnois, CA", 4: "Vint Hill, US"}.items():
+        h = got[hop]
+        assert h["source"] == "site-code" and h["place"] == place, h
+        assert h["distance_km"] <= h["rtt_budget_km"], h
+
+
+def test_the_four_places_are_in_the_town_list():
+    from routemap_engine import cities
+    for name, cc in (("Gravelines", "FR"), ("Beauharnois", "CA"), ("Erith", "GB"), ("Vint Hill Park", "US")):
+        assert any(c["name"] == name and c["cc"] == cc for c in cities.search(name)), name
+

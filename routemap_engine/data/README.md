@@ -7,7 +7,12 @@ what it is asking about.
 ## `cities.tsv`
 
 GeoNames `cities15000` (every populated place above 15,000 people), trimmed to
-seven columns and sorted by population descending. 34,152 rows.
+seven columns and sorted by population descending, plus four smaller places
+where OVHcloud has data centres, from the same GeoNames dumps and licence:
+Gravelines (3014816), Beauharnois (5896495) and Erith (2649937) from
+`cities500.zip`, and Vint Hill Park (4791235) from `US.zip`. GeoNames has no
+populated place named Vint Hill; its park record is the place OVH names.
+34,156 rows.
 
 Used for the origin picker's city search and as the one source of city
 coordinates in the feature, including for `site_codes.tsv`.
@@ -80,11 +85,14 @@ in Hong Kong.
   that site's routers by name. A map also draws neighbouring routers, so a
   router counts for a site only when its name starts with that site's code
   (first or second part, `mil-ava1-sbb1-8k` on "Milan AVA1"); maps labelled
-  only "AZ n" are skipped. The site code is the router name's first part.
-  Hostnames are read only under OVH zones seen in a real trace (`.fr.eu`,
-  `.it.eu`, `.sgp.asia`, RIPE Atlas measurement 221303797); another zone is
-  added when it is seen. Towns GeoNames does not list (Vint Hill, Erith,
-  Gravelines, Beauharnois) are left out; Limburg is GeoNames' "Limburg an der
+  only "AZ n" are skipped. The site code is the router name's first part. A
+  name family that is the main family of two cities' maps names no site
+  (`nyc` is OVH's Newark and its New York; `sjo` was also left out this way).
+  Hostnames are read only under OVH zones seen in a real trace: `.fr.eu`,
+  `.it.eu`, `.sgp.asia` (RIPE Atlas measurement 221303797), `.uk.eu`,
+  `.qc.ca`, `.wa.us`, `.ny.us` (traces to OVH's speed-test hosts, 11 Oct
+  2026); another zone is added when it is seen. Gravelines, Beauharnois, Erith and Vint Hill are in
+  `cities.tsv` for this (see above); Limburg is GeoNames' "Limburg an der
   Lahn". Refresh one carrier without touching the others:
   `python -m routemap_engine.sitegen --only ovh`.
 
