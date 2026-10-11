@@ -226,7 +226,11 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
             hops.append(hop)
         placed = geo.locate_hops(hops, hoiho_records, ip_records, origin) if hops else []
         entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS} for h in placed]
-    return Route(parser=parsed.parser, parser_label=PARSER_LABELS.get(parsed.parser, parsed.parser),
+    label = PARSER_LABELS.get(parsed.parser, parsed.parser)
+    if out.get("method") == "tcp-paris":
+        # The trace text is written in the ICMP prober's format; the probes were TCP.
+        label = f"Built-in TCP prober (port {out.get('port')})"
+    return Route(parser=parsed.parser, parser_label=label,
                  target=discovery.target, warnings=list(parsed.warnings), hoiho_ruleset_date=ruleset,
                  origin=origin_block(origin, located), hops=located, paths=out)
 
