@@ -2,11 +2,22 @@
 port reused at once, after a completed connection and after a refused one.
 On ODIN some probes went unanswered at the target's hop and the target then
 answered hops later; a local refusal to reuse the port, counted as silence by
-0.4.0-beta.1, is one cause this measures. Prints what it saw (-s)."""
+0.4.0-beta.1, was one candidate cause; Windows CI answered 12 of 12 with
+no local failure both ways (11 Oct 2026), which rules it out there. Prints
+what it saw (-s)."""
 import socket
+import sys
 import time
 
+import pytest
+
 from routemap_engine import probe
+
+# Windows uses this prober for path discovery; the Linux namespace lab tests
+# it too. macOS probes over ICMP, and its loopback did not answer an
+# immediately reused port every time (6 to 10 of 12 on the CI runner,
+# 11 Oct 2026), which says nothing about the TCP prober.
+pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="macOS discovers paths over ICMP")
 
 
 def _run(port, n=12):
