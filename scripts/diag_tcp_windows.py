@@ -69,6 +69,17 @@ if __name__ == "__main__":
     print(sys.version, sys.platform, flush=True)
     blackhole(True)
     blackhole(False)
+    s = socket.socket()
+    ok = probe.no_syn_retransmissions(s)
+    s.settimeout(30)
+    t0 = time.perf_counter()
+    try:
+        s.connect(("192.0.2.1", 443))
+    except OSError:
+        pass
+    print(f"blackhole connect with SIO_TCP_INITIAL_RTO (accepted: {ok}): gave up after "
+          f"{time.perf_counter() - t0:.1f} s", flush=True)
+    s.close()
     for dst in ("1.1.1.1", "193.99.144.80"):
         answers(dst, after_dead=False)
         answers(dst, after_dead=True)

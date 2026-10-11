@@ -287,7 +287,11 @@ class Discoverer:
             if entry is None:
                 continue                      # late, duplicate or someone else's
             flow, ttl, sent = entry
-            got.append((flow, ttl, a.address, max(0.0, (a.at - sent) * 1000), a.reached))
+            rtt = max(0.0, (a.at - sent) * 1000)
+            # Later than the wait, the answer is to a retransmission (Windows
+            # sends a SYN again after about 1 s): it still answered, but the
+            # time says nothing about the path.
+            got.append((flow, ttl, a.address, None if rtt > self.o.wait * 1000 else rtt, a.reached))
         return got
 
     def _send(self, flow: int, ttl: int, collected: list) -> bool:
@@ -640,7 +644,8 @@ class Discoverer:
                 path = owner[flow]
                 path.pings_sent += 1
                 if ok and addr:
-                    rtts[path.id].append(rtt)
+                    if rtt is not None:
+                        rtts[path.id].append(rtt)
                 else:
                     path.pings_lost += 1
         for p in reached:

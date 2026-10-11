@@ -517,8 +517,36 @@ TCP_FLOW_PORT = 443
 # ws2ipdef.h. TCP_FAIL_CONNECT_ON_ICMP_ERROR makes connect fail on an ICMP
 # error, and TCP_ICMP_ERROR_INFO then names the router that sent it
 # (learn.microsoft.com, IPPROTO_TCP socket options; ICMP_ERROR_INFO,
-# Windows 10 2004 or later). TCP_NOSYNRETRIES: one SYN per probe.
+# Windows 10 2004 or later). TCP_NOSYNRETRIES did not stop retransmissions:
+# a blackholed connect gave up after 21.0 s with it and without it (Windows
+# CI, 11 Oct 2026), so a SYN the target ignored was answered on its
+# retransmission and timed from the first (ODIN, 0.4.0-beta.2 test build).
+# SIO_TCP_INITIAL_RTO with MaxSynRetransmissions set to
+# TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS is the documented switch
+# (learn.microsoft.com, "SIO_TCP_INITIAL_RTO Control Code",
+# TCP_INITIAL_RTO_PARAMETERS).
 TCP_NOSYNRETRIES = 9
+SIO_TCP_INITIAL_RTO = 0x98000011                 # _WSAIOW(IOC_VENDOR, 17)
+TCP_INITIAL_RTO_UNSPECIFIED_RTT = 0xFFFF         # (USHORT) -1
+TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS = 0xFE    # (UCHAR) -2
+
+
+def no_syn_retransmissions(sock, wsaioctl=None) -> bool:
+    """Windows: one SYN per connect, never a retransmission. False when the
+    system refused (the probe still works; a late answer is then not timed)."""
+    params = struct.pack("<HBx", TCP_INITIAL_RTO_UNSPECIFIED_RTT, TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS)
+    if wsaioctl is None:
+        import ctypes
+        try:
+            ws2 = ctypes.WinDLL("ws2_32")             # type: ignore[attr-defined]
+        except (AttributeError, OSError):
+            return False                              # not Windows
+        returned = ctypes.c_ulong(0)
+        buf = ctypes.create_string_buffer(params, len(params))
+        rc = ws2.WSAIoctl(ctypes.c_size_t(sock.fileno()), ctypes.c_ulong(SIO_TCP_INITIAL_RTO), buf,
+                          ctypes.c_ulong(len(params)), None, ctypes.c_ulong(0), ctypes.byref(returned), None, None)
+        return rc == 0
+    return wsaioctl(sock.fileno(), SIO_TCP_INITIAL_RTO, params) == 0
 TCP_FAIL_CONNECT_ON_ICMP_ERROR = 18
 TCP_ICMP_ERROR_INFO = 19
 WSAEWOULDBLOCK, WSAECONNREFUSED, WSAEHOSTUNREACH = 10035, 10061, 10065
@@ -526,8 +554,8 @@ WSAEWOULDBLOCK, WSAECONNREFUSED, WSAEHOSTUNREACH = 10035, 10061, 10065
 # same flow waits this long before its next probe: heise.de ignored a second
 # connection attempt from the same source port 0.25 s after the first
 # completed, in 9 of 9 tries, and answered at 1 s in 10 of 10 (measured from
-# Manila, 11 Oct 2026). Windows sends one SYN with no retry, so an ignored
-# attempt would read as loss on the path.
+# Manila, 11 Oct 2026). Without the gap such an attempt reads as loss on the
+# path, and with SYN retransmissions off nothing tries it again.
 TCP_REUSE_GAP = 1.5
 
 
@@ -569,7 +597,7 @@ class TcpFlowTransport:
 
     def __init__(self, dst: str, port: int = TCP_FLOW_PORT, *, socket_factory=None, clock=time.perf_counter,
                  select=None, expire_after: float = 3.0, source_for=None, windows: bool | None = None,
-                 sleep=time.sleep, reuse_gap: float = TCP_REUSE_GAP):
+                 sleep=time.sleep, reuse_gap: float = TCP_REUSE_GAP, no_retransmit=None):
         import select as _select
         self.dst, self.port = dst, port
         self.af = family_of(dst)
@@ -589,6 +617,8 @@ class TcpFlowTransport:
         self._reuse_gap = reuse_gap
         self._reached: dict[int, float] = {}     # flow -> when it last reached the target
         self.local_failures = 0
+        self.retransmit_option_refused = 0
+        self._no_retransmit = no_retransmit or no_syn_retransmissions
 
     def sport(self, flow: int) -> int:
         return self._base + flow
@@ -623,6 +653,8 @@ class TcpFlowTransport:
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
             for name, value in self._tcp_options():
                 sock.setsockopt(socket.IPPROTO_TCP, name, value)
+            if self.windows and not self._no_retransmit(sock):
+                self.retransmit_option_refused += 1
             sock.setblocking(False)
             started = sock.connect_ex((self.dst, self.port))
             if started not in (0, WSAEWOULDBLOCK, errno.EINPROGRESS, errno.EWOULDBLOCK):
