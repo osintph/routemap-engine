@@ -179,6 +179,7 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
     resolved = await geo.resolve(parsed.hops, origin, sources=sources, progress=progress,
                                  slack_km=origin_slack_km)
     located = resolved["hops"]
+    one_place_per_address(located, [])
     return Route(
         parser=parsed.parser,
         parser_label=PARSER_LABELS.get(parsed.parser, parsed.parser),
@@ -192,10 +193,12 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
 
 # What a path's located hop keeps: where it is and how it was placed.
 PATH_HOP_FIELDS = ("hop", "address", "hostname", "lat", "lon", "place", "cc", "source",
-                   "min_rtt_ms", "avg_rtt_ms", "reason")
+                   "ip_provider", "precision", "min_rtt_ms", "avg_rtt_ms", "reason")
 
 
-_PLACE_KEYS = ("lat", "lon", "place", "cc", "source")
+# ip_provider and precision are optional in a path's hop, absent unless set.
+_REQUIRED_PATH_FIELDS = tuple(k for k in PATH_HOP_FIELDS if k not in ("ip_provider", "precision"))
+_PLACE_KEYS = ("lat", "lon", "place", "cc", "source", "ip_provider", "precision")
 
 
 def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
@@ -226,7 +229,12 @@ def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
             continue
         for e in entries:
             for key in _PLACE_KEYS:
-                e[key] = placed.get(key)
+                if placed.get(key) is not None:
+                    e[key] = placed[key]
+                elif key in ("ip_provider", "precision"):
+                    e.pop(key, None)                 # optional: absent, never null
+                else:
+                    e[key] = None
 
 
 async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
@@ -259,7 +267,8 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
                     hop.rtts_ms.append(round(rtt, 3))
             hops.append(hop)
         placed = geo.neighbour_check(geo.locate_hops(hops, hoiho_records, ip_records, origin)) if hops else []
-        entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS} for h in placed]
+        entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS if k in _REQUIRED_PATH_FIELDS or h.get(k) is not None}
+                            for h in placed]
     one_place_per_address(located, [entry["located"] for entry in out["paths"]])
     label = PARSER_LABELS.get(parsed.parser, parsed.parser)
     if out.get("method") == "tcp-paris":

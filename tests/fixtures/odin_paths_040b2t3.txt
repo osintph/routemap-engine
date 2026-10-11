@@ -1,0 +1,72 @@
+# ODIN, Windows 11, Route Map 0.4.0-beta.2 test build 02ffcebd25cc, engine 0.7.1.dev2, 12 Oct 2026:
+# routemap-cli.exe -4 heise.de --paths (ACCEPTED). Hops 1 to 6 are the tester's home network and ISP:
+# addresses replaced by documentation addresses, places by "Manila, PH"; columns are not re-aligned.
+Built-in Paris, TCP port 443 · at least 16 paths · 64 flows · 1427 probes in 152 s
+  #  Paths          Location               Address          Avg ms  Loss
+  1  A-C G K L O    local / ISP internal   198.51.100.1        1.4   50%
+  2  all            local / ISP internal   198.51.100.2         2.2    0%
+  3                                        *                        100%
+  4  A-P            Manila, PH        2 routers           5.5    0%
+ 4a  A C D M-O      Manila, PH        198.51.100.42       5.3
+ 4b  B E-L P        Manila, PH        198.51.100.46       5.8
+  5  A-P            Manila, PH        4 routers           6.0    0%
+ 5a  A C D M N      Manila, PH        198.51.100.139     6.0
+ 5b  B G-L          Manila, PH        198.51.100.143     5.9
+ 5c  E F P          Manila, PH        198.51.100.141     5.9
+ 5d  O              Manila, PH        198.51.100.145     7.2
+  6  A-D H-P                               4 routers          42.7   17%
+ 6a  A-D P          Hong Kong, HK          62.115.209.158     59.6
+ 6b  H              Manila, PH        203.0.113.39     51.0
+ 6c  I K L          Manila, PH        203.0.113.65     45.2
+ 6d  J M-O          Manila, PH        203.0.113.123    27.8
+  7  A-E L-P        Singapore, SG          2 routers         131.8   33%
+ 7a  A B D E L N P  Singapore, SG          62.115.112.222     58.3
+ 7b  C M O          Singapore, SG          62.115.137.184    203.4
+  8  A B D-H                               4 routers         182.6    8%
+ 8a  A F            Singapore, SG          62.115.143.36     191.6
+ 8b  B E H          Marseille, FR          62.115.140.54     193.7
+ 8c  D              Singapore, SG          62.115.139.44      54.0
+ 8d  G              Marseille, FR          62.115.140.40     193.8
+  9  A-P                                   4 routers         213.2    0%
+ 9a  A C L-P        Frankfurt, DE          5.56.18.114       252.6
+ 9b  B D E G I J    Frankfurt, DE          62.115.136.250    234.3
+ 9c  F H            Frankfurt, DE          62.115.124.58     224.7
+ 9d  K              Marseille, FR          62.115.122.27     213.2
+ 10  A-P            Frankfurt, DE          4 routers         229.2   17%
+10a  A C L-P        Frankfurt, DE          82.98.102.138     249.5
+10b  B D E G I J    Frankfurt, DE          62.115.132.229    206.5
+10c  F H            Frankfurt, DE          62.115.132.227    207.6
+10d  K              Frankfurt, DE          62.115.136.250    243.3
+ 11  A-G J-M                               3 routers         220.5   25%
+11a  A-E G J K M                           62.115.153.153    254.8
+11b  F              Frankfurt, DE          62.115.132.227    203.6
+11c  L              Frankfurt, DE          62.115.132.229    200.8
+ 12  A B D J                               2 routers         251.8   25%
+12a  A B D          Frankfurt am Main, DE  82.98.102.79      253.1
+12b  J                                     62.115.153.153    250.1
+ 13  A-P                                   3 routers         250.5   20%
+13a  A-C J-M        Hanover, DE            193.99.144.80     249.1
+13b  D-H N-P        Frankfurt am Main, DE  82.98.103.3       254.1
+13c  I              Frankfurt am Main, DE  82.98.102.1       246.3
+ 14  E F H O P                             2 routers         248.8   33%
+14a  E O P          Hanover, DE            193.99.144.80     247.6
+14b  F H            Frankfurt am Main, DE  82.98.103.3       249.5
+ 15                 Hanover, DE            193.99.144.80     262.3   50%
+
+Path  Flows    Splits from                      RTT to target  Target answered
+A     3 of 64  first path                       252.5 ms       10 of 10
+B     2 of 64  hop 4: Manila, PH (from A)  252.3 ms       5 of 10
+C     1 of 64  hop 4: Manila, PH (from B)  255.6 ms       10 of 10
+D     1 of 64  hop 7: Singapore, SG (from C)    not reached    not reached; last answer hop 13 (82.98.103.3, Frankfurt am Main, DE)
+E     1 of 64  hop 4: Manila, PH (from D)  253.7 ms       10 of 10
+F     1 of 64  hop 8: Singapore, SG (from E)    not reached    not reached; last answer hop 14 (82.98.103.3, Frankfurt am Main, DE)
+G     1 of 64  hop 5: Manila, PH (from F)  not reached    not reached; last answer hop 13 (82.98.103.3, Frankfurt am Main, DE)
+H     1 of 64  hop 8: Marseille, FR (from G)    not reached    not reached; last answer hop 14 (82.98.103.3, Frankfurt am Main, DE)
+I     1 of 64  hop 6: Manila, PH (from H)  not reached    not reached; last answer hop 13 (82.98.102.1, Frankfurt am Main, DE)
+J     1 of 64  hop 6: Manila, PH (from I)  249.9 ms       10 of 10
+K     1 of 64  hop 6: Manila, PH (from J)  254.3 ms       10 of 10
+L     1 of 64  hop 9: Frankfurt, DE (from K)    249.4 ms       10 of 10
+M     1 of 64  hop 4: Manila, PH (from L)  252.3 ms       10 of 10
+N     1 of 64  hop 7: Singapore, SG (from M)    not reached    not reached; last answer hop 13 (82.98.103.3, Frankfurt am Main, DE)
+O     1 of 64  hop 5: Manila, PH (from N)  250.8 ms       10 of 10
+P     1 of 64  hop 4: Manila, PH (from O)  246.6 ms       10 of 10

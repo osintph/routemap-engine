@@ -644,13 +644,28 @@ def neighbour_check(located: list[dict]) -> list[dict]:
             continue
         needed = away_prev / KM_PER_MS_ROUND_TRIP
         rose = min(rtts) - prev["min_rtt_ms"]
-        if rose >= needed:
-            continue
         span = (f"hop {run[0]['hop']}" if len(run) == 1 else f"hops {run[0]['hop']} to {run[-1]['hop']}")
-        why = (f"{ANNOT_RTT_IMPOSSIBLE}: {away_prev:,.0f} km from hop {prev['hop']} "
-               f"({prev.get('place') or 'placed'}) and back again by hop {nxt['hop']}, "
-               f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms"
-               + ("" if len(run) == 1 else f" ({span} answered from the same place)"))
+        same = "" if len(run) == 1 else f" ({span} answered from the same place)"
+        # The next placed hop is reached through this one: its probes went out
+        # by way of the detour, so its RTT over the previous hop's covers at
+        # least the detour's extra distance one way, whatever way the replies
+        # came back. A hop that answers its own probes slowly (ICMP at low
+        # priority) can pass the first test and fail this one: ODIN's hop 12,
+        # 281 ms "in Chicago" between Frankfurt at 201 ms and 247 ms.
+        detour = away_prev + away_next - haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"])
+        needed_next = detour / (2 * KM_PER_MS_ROUND_TRIP)
+        rose_next = (nxt["min_rtt_ms"] - prev["min_rtt_ms"]) if nxt.get("min_rtt_ms") is not None else None
+        if rose >= needed and (rose_next is None or rose_next >= needed_next):
+            continue
+        if rose < needed:
+            why = (f"{ANNOT_RTT_IMPOSSIBLE}: {away_prev:,.0f} km from hop {prev['hop']} "
+                   f"({prev.get('place') or 'placed'}) and back again by hop {nxt['hop']}, "
+                   f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms" + same)
+        else:
+            why = (f"{ANNOT_RTT_IMPOSSIBLE}: hop {nxt['hop']} ({nxt.get('place') or 'placed'}) is reached "
+                   f"through it, and the detour from hop {prev['hop']} ({prev.get('place') or 'placed'}) "
+                   f"adds {detour:,.0f} km out, at least {needed_next:,.0f} ms; hop {nxt['hop']} is only "
+                   f"{max(rose_next, 0):,.1f} ms past hop {prev['hop']}" + same)
         for e in run:
             for cand in e["candidates"]:
                 if cand.get("source") == SOURCE_IP_DB and cand.get("accepted"):
