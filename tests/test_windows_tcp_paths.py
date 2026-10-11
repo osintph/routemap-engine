@@ -37,6 +37,9 @@ class FakeSock:
         self.error, self.icmp = 0, b""
         FakeSock.made.append(self)
 
+    def fileno(self):
+        return -1                                      # not a real socket: the Windows ioctl refuses it
+
     def listen(self, *a):
         raise AssertionError("a probe socket must never listen")
 
@@ -259,7 +262,6 @@ def test_syn_retransmissions_are_switched_off_with_the_documented_ioctl():
     t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10",
                                socket_factory=FakeSock, select=lambda r, w, x, timeout: ([], [], []),
                                no_retransmit=lambda s: probe.no_syn_retransmissions(s, wsaioctl))
-    FakeSock.fileno = lambda self: 7
     t.send(0, 5, 1)
     t.send(1, 5, 2)
     assert calls == [(0x98000011, bytes([0xFF, 0xFF, 0xFE, 0x00]))] * 2
