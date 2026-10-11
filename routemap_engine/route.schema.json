@@ -599,7 +599,8 @@
       "properties": {
         "method": {
           "enum": [
-            "icmp-paris"
+            "icmp-paris",
+            "tcp-paris"
           ]
         },
         "at_least": {
@@ -653,6 +654,11 @@
         "seconds": {
           "type": "number",
           "minimum": 0
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
       }
     }

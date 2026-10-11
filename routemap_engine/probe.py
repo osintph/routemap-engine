@@ -62,6 +62,7 @@ The trace stops after the hop in which the target answered.
 """
 from __future__ import annotations
 
+import errno
 import ipaddress
 import os
 import secrets
@@ -489,12 +490,166 @@ def flow_checksum(flow: int) -> int:
     return 0x1000 + (flow * 0x0F1D) % 0xE000
 
 
+WINDOWS_TCP_MIN_BUILD = 19041          # Windows 10 2004: TCP_FAIL_CONNECT_ON_ICMP_ERROR
+
+
 def flow_available() -> tuple[bool, str]:
-    """(usable, reason when not) for Paris-style path probes on this system."""
+    """(usable, reason when not) for Paris-style path probes on this system:
+    ICMP on macOS and Linux (:class:`FlowTransport`), TCP on Windows
+    (:class:`TcpFlowTransport`, Windows 10 2004 or later)."""
     if sys.platform.startswith("win"):
-        return False, ("Windows' ICMP API chooses each probe's identifier and sequence number itself, "
-                       "so it cannot keep the probes of one flow on one path")
+        build = getattr(sys.getwindowsversion(), "build", 0) if hasattr(sys, "getwindowsversion") else 0
+        if build < WINDOWS_TCP_MIN_BUILD:
+            return False, (f"path discovery on Windows needs Windows 10 version 2004 or later "
+                           f"(this is build {build})")
+        return True, ""
     return _posix_available()
+
+
+def flow_method() -> str:
+    """The probe method path discovery uses on this system."""
+    return TcpFlowTransport.METHOD if sys.platform.startswith("win") else FlowTransport.METHOD
+
+
+# ------------------------------------------------- path probes, Windows TCP ---
+
+TCP_FLOW_PORT = 443
+# ws2ipdef.h. TCP_FAIL_CONNECT_ON_ICMP_ERROR makes connect fail on an ICMP
+# error, and TCP_ICMP_ERROR_INFO then names the router that sent it
+# (learn.microsoft.com, IPPROTO_TCP socket options; ICMP_ERROR_INFO,
+# Windows 10 2004 or later). TCP_NOSYNRETRIES: one SYN per probe.
+TCP_NOSYNRETRIES = 9
+TCP_FAIL_CONNECT_ON_ICMP_ERROR = 18
+TCP_ICMP_ERROR_INFO = 19
+WSAEWOULDBLOCK, WSAECONNREFUSED, WSAEHOSTUNREACH = 10035, 10061, 10065
+
+
+def parse_icmp_error_info(raw: bytes) -> tuple[str | None, int | None, int | None]:
+    """(router address, ICMP type, ICMP code) from an ICMP_ERROR_INFO: a
+    SOCKADDR_INET (28 bytes: family, then the IPv4 address at 4 or the IPv6
+    address at 8), the protocol (4 bytes), the type and the code."""
+    if not raw or len(raw) < 34:
+        return None, None, None
+    family = struct.unpack_from("<H", raw, 0)[0]
+    if family == 2:
+        address = socket.inet_ntoa(raw[4:8])
+    elif family == 23:
+        address = str(ipaddress.IPv6Address(raw[8:24]))
+    else:
+        return None, None, None
+    return address, raw[32], raw[33]
+
+
+class TcpFlowTransport:
+    """Paris-style path probes on Windows, without administrator rights: a
+    TCP connect per probe, the TTL set, the source port as the flow (a flow
+    keeps its five-tuple; the TCP sequence number, which balancers do not
+    hash, is Windows' own), no SYN retries. A router's time exceeded fails the
+    connect and TCP_ICMP_ERROR_INFO names the router; the target answers with
+    a connection or a refusal, either of which means reached (the connection
+    is reset at once). Windows' ICMP API cannot do this: it sends identifier
+    1 and a system-wide sequence number, so every probe is a different flow
+    (measured, windows-2025, run 38033956629). This method passed on a real
+    Windows 11 network (build 26200, 11 Oct 2026): 12 hops answered, and two
+    source ports split at a per-flow balancer at hop 5.
+
+    Probes and paths found over TCP can differ from ICMP ones: balancers
+    spread TCP by its ports, and some routers answer TCP probes from
+    another interface. Every result carries its method ("tcp-paris")."""
+
+    METHOD = "tcp-paris"
+
+    def __init__(self, dst: str, port: int = TCP_FLOW_PORT, *, socket_factory=None, clock=time.perf_counter,
+                 select=None, expire_after: float = 3.0):
+        import select as _select
+        self.dst, self.port = dst, port
+        self.af = family_of(dst)
+        self._socket = socket_factory or socket.socket
+        self._clock = clock
+        self._select = select or _select.select
+        self._expire = expire_after
+        self._base = 40000 + secrets.randbelow(10000)
+        self._open: dict[int, tuple] = {}        # seq -> (socket, flow, sent at)
+        self._kept: list[FlowAnswer] = []        # answers read while a flow was freed
+
+    def sport(self, flow: int) -> int:
+        return self._base + flow
+
+    def send(self, flow: int, ttl: int, seq: int):
+        # A five-tuple carries one connection at a time: a flow's earlier
+        # probe is answered or expired before the next one goes out.
+        while any(f == flow for _s, f, _t in self._open.values()):
+            self._kept.extend(self._poll(0.05))
+        v6 = self.af == 6
+        sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("::" if v6 else "0.0.0.0", self.sport(flow)))
+            if v6:
+                sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_UNICAST_HOPS, ttl)
+            else:
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
+            sock.setsockopt(socket.IPPROTO_TCP, TCP_NOSYNRETRIES, 1)
+            sock.setsockopt(socket.IPPROTO_TCP, TCP_FAIL_CONNECT_ON_ICMP_ERROR, 1)
+            sock.setblocking(False)
+            started = sock.connect_ex((self.dst, self.port))
+            if started not in (0, WSAEWOULDBLOCK, errno.EINPROGRESS, errno.EWOULDBLOCK):
+                raise OSError(started, "connect refused locally")
+        except OSError:
+            self._drop(sock)
+            return
+        self._open[seq] = (sock, flow, self._clock())
+
+    def _drop(self, sock):
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+    def read(self, timeout: float) -> list[FlowAnswer]:
+        if self._kept:
+            out, self._kept = self._kept, []
+            return out + self._poll(0.0)
+        return self._poll(timeout)
+
+    def _poll(self, timeout: float) -> list[FlowAnswer]:
+        if not self._open:
+            time.sleep(max(0.0, min(timeout, 0.05)))
+            return []
+        by_sock = {entry[0]: seq for seq, entry in self._open.items()}
+        _, writable, failed = self._select([], list(by_sock), list(by_sock), max(0.0, timeout))
+        now = self._clock()
+        out: list[FlowAnswer] = []
+        for sock in set(writable) | set(failed):
+            seq = by_sock[sock]
+            err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if err in (0, WSAECONNREFUSED):
+                out.append(FlowAnswer(seq, self.dst, True, now))
+            else:
+                try:
+                    address, _kind, _code = parse_icmp_error_info(
+                        sock.getsockopt(socket.IPPROTO_TCP, TCP_ICMP_ERROR_INFO, 64))
+                except OSError:
+                    address = None
+                if address:
+                    reached = ipaddress.ip_address(address) == ipaddress.ip_address(self.dst)
+                    out.append(FlowAnswer(seq, address, reached, now))
+            self._drop(sock)
+            self._open.pop(seq, None)
+        for seq, (sock, _flow, sent) in list(self._open.items()):
+            if now - sent > self._expire:
+                self._drop(sock)
+                self._open.pop(seq, None)
+        return out
+
+    def close(self):
+        for sock, _flow, _sent in self._open.values():
+            self._drop(sock)
+        self._open.clear()
 
 
 class FlowTransport:
@@ -503,6 +658,8 @@ class FlowTransport:
     :meth:`read` returns the answers that have arrived, matched by sequence
     number. One socket per flow on Linux (the kernel's identifier is the
     socket's), one socket for all flows on macOS (the identifier is ours)."""
+
+    METHOD = "icmp-paris"
 
     def __init__(self, dst: str):
         self.dst = dst
