@@ -44,6 +44,10 @@ Keep a Changelog format; this project uses Semantic Versioning.
   `to_trace_text`), and `atlas.mark_final_probe` annotates it "answered the
   final TTL 255 probe" (a new annotation in the schema). Found in a real
   reverse trace (measurement 221303797), where it showed as hop 255.
+- The bundled town list has four more places, from the same GeoNames dumps
+  and licence, where OVH has data centres: Gravelines, Beauharnois, Erith
+  (cities500) and Vint Hill Park (US; GeoNames has no populated place named
+  Vint Hill).
 - `Atlas.wait_result()` returns RIPE's result object; `wait()` still returns
   the text.
 - **The physics check takes the origin's own uncertainty**:
@@ -54,7 +58,10 @@ Keep a Changelog format; this project uses Semantic Versioning.
   IP database put hop 1 (0.406 ms, so at most 40.6 km) 48 km from the probe,
   and 300 km of slack let it through.
 - **OVHcloud in the carrier site-code table**, from OVH's own network
-  weathermap: 38 site codes (Strasbourg, Milan, Marseille, Singapore, ...).
+  weathermap: 40 site codes (Strasbourg, Milan, Marseille, Singapore, and
+  the large data centres Gravelines, Erith, Beauharnois and Vint Hill, ...).
+  A name family two cities share (`nyc`: OVH's Newark and New York) names
+  no site.
   In the real reverse trace OVH's backbone was placed by the IP database in
   London, Warsaw and Hong Kong; its router names put it in Strasbourg, Milan,
   Marseille and Singapore, each inside its round trip. Site codes may carry

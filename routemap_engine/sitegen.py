@@ -70,6 +70,11 @@ CITY_ALIASES = {
     # OVH's data centre "Limburg" (under Germany on its weathermap): GeoNames
     # names the same town by its full name.
     "limburg": "Limburg an der Lahn",
+    # OVH's data centre "Vint Hill" (Virginia). GeoNames has no populated place
+    # of that name; its record for the place is Vint Hill Park (4791235, a few
+    # hundred metres from the former Vint Hill Farms Station), added to
+    # cities.tsv for this. The same spot, not a nearby town.
+    "vint hill": "Vint Hill Park",
 }
 
 
@@ -139,6 +144,22 @@ def ovh_routers(svg: str) -> set[str]:
     return set(re.findall(r'<text[^>]*class="object"[^>]*>([a-z0-9][a-z0-9-]+)</text>', svg))
 
 
+def ovh_home_routers(drawn: set[str]) -> set[str]:
+    """The routers a site map draws as its own: the name family (first part)
+    it draws most. A map also draws neighbours from other sites (the Erith
+    map draws two London routers), and those are left out. A map whose two
+    largest families are the same size has no clear home and gives nothing.
+    fetch_ovh uses it only to find families two cities share ("nyc" is OVH's
+    Newark and its New York), which then name no site."""
+    families: dict = {}
+    for router in drawn:
+        families.setdefault(router.split("-", 1)[0], set()).add(router)
+    ranked = sorted(families.values(), key=len, reverse=True)
+    if not ranked or (len(ranked) > 1 and len(ranked[0]) == len(ranked[1])):
+        return set()
+    return ranked[0]
+
+
 def fetch_ovh() -> dict:
     """OVHcloud (AS16276).
 
@@ -153,13 +174,22 @@ def fetch_ovh() -> dict:
     used.
     """
     index = fetch(OVH_WEATHERMAP)
+    cities = load_cities()
     routers: dict = {}
+    homes: dict = {}                    # name family -> the cities whose maps draw it most
     for map_id, codes, label in ovh_sites(index):
-        svg = fetch(f"{OVH_WEATHERMAP}maps/weathermap_{map_id}.svg")
-        for router in ovh_routers(svg):
+        drawn = ovh_routers(fetch(f"{OVH_WEATHERMAP}maps/weathermap_{map_id}.svg"))
+        for router in ovh_home_routers(drawn):
+            homes.setdefault(router.split("-", 1)[0], set()).add(fold(city_of(label, cities)))
+        for router in drawn:
             parts = router.split("-")
             if parts[0] in codes or (len(parts) > 1 and parts[1] in codes):
                 routers.setdefault(router, label)
+    # A family that is the main family of maps for two different cities
+    # ("nyc": nyc-ny1 is OVH's Newark, nyc-ny9 its New York) cannot name a
+    # site by itself: its routers are left out.
+    ambiguous = {family for family, cities in homes.items() if len(cities) > 1}
+    routers = {r: label for r, label in routers.items() if r.split("-", 1)[0] not in ambiguous}
     if not routers:
         raise SystemExit("no routers found on OVH's weathermap; the page layout changed and "
                          "this parser needs updating")

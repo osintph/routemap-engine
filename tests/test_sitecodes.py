@@ -95,6 +95,12 @@ def test_case_and_trailing_dot_do_not_matter():
     ("mil-ava1-sbb1-8k.it.eu", "Milan"),
     ("be102.mrs-mrs1-sbb1-8k.fr.eu", "Marseille"),
     ("sin1-sgcs2-g1-nc5.sgp.asia", "Singapore"),
+    # OVH's large data centres, as reverse DNS named their routers in traces
+    # to OVH's speed-test hosts there (11 Oct 2026).
+    ("be102.lil2-gra1-sbb1-nc5.fr.eu", "Gravelines"),
+    ("be101.lon1-eri1-g1-nc5.uk.eu", "Erith"),
+    ("be102.bhs-g1-nc5.qc.ca", "Beauharnois"),
+    ("vl1332.was1-vin1-g1-nc5.wa.us", "Vint Hill"),
 ])
 def test_ovh_backbone_hostnames_resolve(hostname, city):
     record = sitecodes.lookup(hostname)
@@ -108,6 +114,12 @@ def test_ovh_backbone_hostnames_resolve(hostname, city):
     "www.fr.eu",
     "foo-bar1.fr.eu",                  # not a site OVH publishes
     "be101.sbg-g1-nc5.de.eu",          # a zone not seen in a real trace yet
+    # "nyc" is OVH's name family for both Newark (nyc-ny1) and New York
+    # (nyc-ny9): it names no site.
+    "nyc-ny9-sbb1-8k.ny.us",
+    "nyc-ny1-sbb1-8k.ny.us",
+    "be101.lon1-eri1-g1-nc5.uk.eu.example.com",
+    "be102.bhs-g1-nc5.qc.ca.example.net",
 ])
 def test_ovh_names_outside_its_rule_do_not_resolve(hostname):
     assert sitecodes.lookup(hostname) is None, hostname

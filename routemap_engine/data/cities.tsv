@@ -1,4 +1,4 @@
-# GeoNames cities15000, trimmed. Creative Commons Attribution 4.0.
+# GeoNames cities15000, trimmed, plus four smaller places where OVHcloud has data centres (cities500: Gravelines 3014816, Beauharnois 5896495, Erith 2649937; US.txt: Vint Hill Park 4791235). Creative Commons Attribution 4.0.
 # https://download.geonames.org/export/dump/ , https://creativecommons.org/licenses/by/4.0/
 # name	asciiname	cc	admin1	lat	lon	population
 Shanghai		CN		31.22	121.46	24874500
@@ -34112,11 +34112,14 @@ Nuuk		GL		64.18	-51.72	14798
 Belmopan		BZ		17.25	-88.76	13381
 Avarua		CK		-21.21	-159.78	13373
 Tórshavn	Torshavn	FO	ST	62.01	-6.77	13200
+Gravelines		FR		50.99	2.13	13137
 Basseterre		KN		17.3	-62.72	12920
+Beauharnois		CA		45.31	-73.87	11918
 Pago Pago		AS		-14.28	-170.7	11500
 Basse-Terre		GP	GP	16.0	-61.73	11472
 Mariehamn		AX		60.1	19.93	10682
 Kralendijk		BQ	BO	12.15	-68.27	10620
+Erith		GB	ENG	51.48	0.17	9811
 Harewood		CA		49.15	-123.95	8769
 Road Town		VG		18.43	-64.62	8449
 Saint George's		GD		12.05	-61.75	7500
@@ -34153,3 +34156,4 @@ Grytviken		GS		-54.28	-36.51	2
 Ngerulmud		PW		7.5	134.62	0
 Plymouth		MS		16.71	-62.21	0
 Thomas Magena home		KE		-0.77	34.75	0
+Vint Hill Park		US	VA	38.75	-77.68	0
