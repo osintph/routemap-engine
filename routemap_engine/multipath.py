@@ -86,9 +86,19 @@ LETTERS = "ABCDEFGHIJKLMNOP"
 
 
 class Transport(Protocol):
-    def send(self, flow: int, ttl: int, seq: int) -> None: ...
+    """Sends and reads one flow's probes. Optional, used when present:
+    ``forget(seq)`` drops a probe the discoverer stopped waiting for;
+    ``ready_at(flow)`` is the earliest clock time the flow may send again (a
+    TCP flow just after it reached the target); ``send`` returning False means
+    the probe never left this machine (a local socket error)."""
+    def send(self, flow: int, ttl: int, seq: int) -> bool | None: ...
     def read(self, timeout: float) -> list[probe.FlowAnswer]: ...
     def close(self) -> None: ...
+
+
+# A run of local send failures this long stops the discovery: the system is
+# refusing the probes, and retrying would only spin.
+MAX_LOCAL_FAILURES = 20
 
 
 @dataclass
@@ -150,7 +160,8 @@ class Discovery:
     probes_sent: int = 0
     flows_used: int = 0
     paths_capped: bool = False
-    stopped_by: str = "complete"          # complete | budget | cancel | deadline | gap | max_hops
+    stopped_by: str = "complete"          # complete | budget | cancel | deadline | gap | max_hops | local_error
+    local_failures: int = 0               # probes this machine failed to send (not network loss)
     seconds: float = 0.0
     method: str = METHOD
 
@@ -159,6 +170,7 @@ class Discovery:
                 "at_least": True, "af": self.af,
                 "paths": [p.to_dict() for p in self.paths], "per_packet_hops": list(self.per_packet_hops),
                 "probes_sent": self.probes_sent, "flows": self.flows_used, "paths_capped": self.paths_capped,
+                "local_failures": self.local_failures,
                 "stopped_by": self.stopped_by, "seconds": round(self.seconds, 1)}
 
     def trace_text(self) -> str:
@@ -184,6 +196,43 @@ def _median(values: list[float]) -> float | None:
     ordered = sorted(values)
     mid = len(ordered) // 2
     return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _compatible(a: list[str | None], b: list[str | None], target: str) -> bool:
+    """Whether two flows' hop sequences are one path: they differ only where
+    both got an answer and the answers differ. A silence matches anything. A
+    flow that reached the target ends there, so a longer flow that has a
+    router at or past that TTL took another path."""
+    for x, y in zip(a, b):
+        if x is not None and y is not None and x != y:
+            return False
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if short and short[-1] == target:
+        return all(x is None or x == target for x in long_[len(short) - 1:])
+    return True
+
+
+def group_flows(seqs: dict[int, list[str | None]], target: str) -> list[tuple[list[str | None], list[int]]]:
+    """Flows grouped into paths by :func:`_compatible`; each group's sequence
+    fills one member's silences with another's answers and ends at the
+    target, once. The best-answered flows seed the groups, so a silence never
+    seeds a path of its own."""
+    groups: list[tuple[list[str | None], list[int]]] = []
+    for f in sorted(seqs, key=lambda f: (sum(x is None for x in seqs[f]), f)):
+        s = seqs[f]
+        for rep, members in groups:
+            if _compatible(rep, s, target):
+                members.append(f)
+                merged = [x if x is not None else y for x, y in zip(rep, s)]
+                longer = rep if len(rep) >= len(s) else s
+                merged += longer[len(merged):]
+                if target in merged:
+                    merged = merged[:merged.index(target) + 1]
+                rep[:] = merged
+                break
+        else:
+            groups.append((list(s), [f]))
+    return groups
 
 
 def n_k(k: int) -> int:
@@ -218,6 +267,7 @@ class Discoverer:
         self._result: dict[tuple[int, int], tuple[str | None, float | None, bool]] = {}
         self._reached_at: dict[int, int] = {}                        # flow -> TTL it reached
         self._stop: str | None = None
+        self._local_run = 0
         self._started = clock()
 
     # ------------------------------------------------------------- probing
@@ -257,11 +307,24 @@ class Discoverer:
                 if left <= 0:
                     break
                 collected.extend(self._take(self.t.read(left)))
+        ready_at = getattr(self.t, "ready_at", None)
+        if ready_at is not None:
+            while not self._stopping():
+                left = ready_at(flow) - self.clock()
+                if left <= 0:
+                    break
+                collected.extend(self._take(self.t.read(min(left, 0.05))))
         self._seq = (self._seq + 1) & 0xFFFF
         while self._seq in self._pending:
             self._seq = (self._seq + 1) & 0xFFFF
         now = self.clock()
-        self.t.send(flow, ttl, self._seq)
+        if self.t.send(flow, ttl, self._seq) is False:
+            self.d.local_failures += 1
+            self._local_run += 1
+            if self._local_run >= MAX_LOCAL_FAILURES:
+                self._stop = "local_error"
+            return None
+        self._local_run = 0
         self._pending[self._seq] = (flow, ttl, now)
         self._last_send = now
         self.d.probes_sent += 1
@@ -272,10 +335,32 @@ class Discoverer:
         for each one sent, after its answer or its wait."""
         collected: list = []
         sent: list[tuple[int, int]] = []
-        for flow, ttl in items:
-            if any(f == flow and t == ttl for f, t, _ in self._pending.values()):
-                self._drain_until_clear(flow, ttl, collected)
-            if not self._send(flow, ttl, collected):
+        # A transport that carries one probe per flow at a time (TCP: one
+        # connection per five-tuple) gets a flow's next probe only once the
+        # earlier one is answered or given up; the others go out meanwhile.
+        one_per_flow = getattr(self.t, "ONE_PER_FLOW", False)
+        queue = list(items)
+        while queue:
+            busy = {(f, t) for f, t, _ in self._pending.values()}
+            busy_flows = {f for f, _t in busy} if one_per_flow else set()
+            pick = next((i for i, (f, t) in enumerate(queue) if (f, t) not in busy and f not in busy_flows), None)
+            if pick is None:
+                now = self.clock()
+                for s, (f, t, at) in list(self._pending.items()):
+                    if at + self.o.wait <= now:
+                        self._pending.pop(s)
+                        self._forget(s)
+                collected.extend(self._take(self.t.read(0.05)))
+                if self._stopping():
+                    break
+                continue
+            flow, ttl = queue.pop(pick)
+            ok = self._send(flow, ttl, collected)
+            if ok is None:
+                if self._stop:
+                    break
+                continue                      # never left this machine: not a probe, not a loss
+            if not ok:
                 break
             sent.append((flow, ttl))
         expiry = {s: self._pending[s][2] + self.o.wait for s in self._pending}
@@ -283,10 +368,13 @@ class Discoverer:
             now = self.clock()
             for s in [s for s, end in expiry.items() if end <= now and s in self._pending]:
                 self._pending.pop(s)
+                self._forget(s)
             if not self._pending:
                 break
             left = min(expiry[s] for s in self._pending) - now
             collected.extend(self._take(self.t.read(max(left, 0.0))))
+        for s in list(self._pending):
+            self._forget(s)
         self._pending.clear()
         answered = {(f, t): (a, r, reached) for f, t, a, r, reached in collected}
         out = []
@@ -295,12 +383,20 @@ class Discoverer:
             out.append((flow, ttl, a, r, reached))
         return out
 
+    def _forget(self, seq: int):
+        """The discoverer stopped waiting for *seq*: the transport drops it too,
+        so a flow's next probe never waits on a probe nobody will read."""
+        forget = getattr(self.t, "forget", None)
+        if forget is not None:
+            forget(seq)
+
     def _drain_until_clear(self, flow: int, ttl: int, collected: list):
         while any(f == flow and t == ttl for f, t, _ in self._pending.values()):
             now = self.clock()
             for s, (f, t, sent) in list(self._pending.items()):
                 if sent + self.o.wait <= now:
                     self._pending.pop(s)
+                    self._forget(s)
             collected.extend(self._take(self.t.read(0.05)))
 
     def _record(self, results):
@@ -323,25 +419,31 @@ class Discoverer:
         at = self._reached_at.get(flow)
         return at is None or at >= ttl
 
-    def _probe_flows_at(self, ttl: int, flows: range | list[int]):
-        todo = [(f, ttl) for f in flows if (f, ttl) not in self._result and self._alive(f, ttl)]
+    def _probe_items(self, todo: list[tuple[int, int]]):
+        todo = [(f, t) for f, t in todo if (f, t) not in self._result and self._alive(f, t)]
         if not todo:
             return
         self._record(self._batch(todo))
         # One retry for probes a hop left unanswered while it answered others
         # (rate limiting, a lost reply), so a silence does not split a path.
-        answered = any(self._result.get((f, ttl), (None,))[0] for f, _ in todo)
-        retry = [(f, t) for f, t in todo if answered and self._result.get((f, t), (None,))[0] is None]
+        answered = {t for f, t in todo if self._result.get((f, t), (None,))[0]}
+        retry = [(f, t) for f, t in todo if t in answered and self._result.get((f, t), (None,))[0] is None
+                 and self._alive(f, t)]
         if retry:
             for key in retry:
                 self._result.pop(key, None)
             self._record(self._batch(retry))
 
+    def _probe_flows_at(self, ttl: int, flows: range | list[int]):
+        self._probe_items([(f, ttl) for f in flows])
+
     def _backfill(self, flows: range, upto: int):
-        for ttl in range(1, upto):
-            if self._stopping():
-                return
-            self._probe_flows_at(ttl, [f for f in flows if self._alive(f, ttl)])
+        """New flows at every earlier hop, in one batch: hop by hop across the
+        flows, so a flow's probes are spread out and no hop waits for the
+        previous one's silences."""
+        if self._stopping():
+            return
+        self._probe_items([(f, t) for t in range(1, upto) for f in flows])
 
     # ---------------------------------------------------------------- run
     def run(self) -> Discovery:
@@ -398,6 +500,8 @@ class Discoverer:
             else:
                 d.stopped_by = "max_hops"
             d.flows_used = m
+            if not self._stop:
+                self._settle_reach(m)
             self._build_paths(m)
             if not self._stop:
                 self._ping_paths()
@@ -411,7 +515,10 @@ class Discoverer:
         return d
 
     def _per_packet(self, ttl: int) -> bool:
-        flow = next((f for f in range(MAX_FLOWS) if (self._result.get((f, ttl)) or (None,))[0]), None)
+        # A router's answer, not the target's: probing a flow that reached a TCP
+        # target again at once would only meet the target's reuse limit.
+        answered = [f for f in range(MAX_FLOWS) if (self._result.get((f, ttl)) or (None,))[0]]
+        flow = next((f for f in answered if not self._result[(f, ttl)][2]), answered[0] if answered else None)
         if flow is None:
             return False
         first = self._result[(flow, ttl)][0]
@@ -428,35 +535,75 @@ class Discoverer:
         if self.on_progress is None:
             return
         try:
-            paths = len({tuple((self._result.get((f, t)) or (None,))[0] for t in range(1, ttl + 1))
-                         for f in range(MAX_FLOWS) if (f, 1) in self._result})
+            paths = len(group_flows(self._sequences(range(MAX_FLOWS), ttl), self.address))
             self.on_progress({"ttl": ttl, "paths": paths, "probes": self.d.probes_sent, "budget": self.o.budget})
         except Exception:  # noqa: BLE001 - the display must not stop the run
             pass
 
+    def _sequences(self, flows, upto: int | None = None) -> dict[int, list[str | None]]:
+        """Each probed flow's responders from TTL 1, ending at the TTL it
+        reached the target (or at *upto*, or the last TTL probed)."""
+        per_packet = set(self.d.per_packet_hops)
+        last = max((t for (_f, t) in self._result), default=0)
+        if upto is not None:
+            last = min(last, upto)
+        out = {}
+        for f in flows:
+            if (f, 1) not in self._result:
+                continue
+            end = min(last, self._reached_at.get(f, last))
+            out[f] = [None if t in per_packet else (self._result.get((f, t)) or (None,))[0]
+                      for t in range(1, end + 1)]
+            while out[f] and out[f][-1] is None and f not in self._reached_at:
+                out[f].pop()
+        return out
+
+    def _settle_reach(self, m: int):
+        """A flow that reached the target only after silent hops past its last
+        router: probe the first of those hops again (twice at most). A TCP
+        target ignores a repeated connection attempt from the same port for a
+        moment, so the silence may have been the target, and then that is
+        where the path ends; otherwise the silences stand."""
+        todo: dict[int, tuple[int, int]] = {}            # flow -> (first silent TTL, reach)
+        for f in range(m):
+            reach = self._reached_at.get(f)
+            if reach is None:
+                continue
+            last_router = max((t for t in range(1, reach) if (self._result.get((f, t)) or (None,))[0]), default=0)
+            if last_router + 1 < reach:
+                todo[f] = (last_router + 1, reach)
+        for _ in range(2):                               # all flows in one round, twice at most
+            if not todo or self._stopping():
+                return
+            for f, (first, _reach) in todo.items():
+                self._result.pop((f, first), None)
+            self._record(self._batch([(f, first) for f, (first, _reach) in todo.items()]))
+            for f, (first, reach) in list(todo.items()):
+                if self._reached_at.get(f) == first:
+                    for t in range(first + 1, reach + 1):
+                        self._result.pop((f, t), None)
+                    del todo[f]
+
+    def _rebuild_hops(self):
+        """Responders and RTTs per hop from each flow's final answers, so a
+        target answer a settled flow made at a later TTL is not a hop."""
+        d = self.d
+        d.responders, d.rtts = {}, {}
+        for (f, t), (addr, rtt, _reached) in sorted(self._result.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+            if t == PING_HOPS or addr is None or t > self._reached_at.get(f, t):
+                continue
+            seen = d.responders.setdefault(t, [])
+            if addr not in seen:
+                seen.append(addr)
+            if rtt is not None:
+                d.rtts.setdefault((t, addr), []).append(rtt)
+
     def _build_paths(self, m: int):
         d = self.d
+        self._rebuild_hops()
         last = max(d.responders) if d.responders else 0
         per_packet = set(d.per_packet_hops)
-        seqs: dict[int, list[str | None]] = {}
-        for f in range(m):
-            end = min(last, self._reached_at.get(f, last))
-            seqs[f] = [None if t in per_packet else (self._result.get((f, t)) or (None,))[0]
-                       for t in range(1, end + 1)]
-        # Group flows whose responders agree wherever both answered; a silence
-        # matches anything, so a lost reply does not make a path of its own.
-        groups: list[tuple[list[str | None], list[int]]] = []
-        for f in sorted(seqs, key=lambda f: sum(x is None for x in seqs[f])):
-            s = seqs[f]
-            for rep, members in groups:
-                if len(rep) == len(s) and all(a is None or b is None or a == b for a, b in zip(rep, s)):
-                    members.append(f)
-                    for i, x in enumerate(s):
-                        if rep[i] is None:
-                            rep[i] = x
-                    break
-            else:
-                groups.append((list(s), [f]))
+        groups = group_flows(self._sequences(range(m)), self.address)
         for t in range(1, last + 1):
             d.silent[t] = sum(1 for f in range(m) if (f, t) in self._result and self._result[(f, t)][0] is None)
         groups.sort(key=lambda g: (-len(g[1]), g[1][0]))
@@ -476,25 +623,28 @@ class Discoverer:
                                 reached=any(f in self._reached_at for f in flows)))
 
     def _ping_paths(self):
+        """Each reached path pinged :data:`PATH_PINGS` times, one round across
+        all paths at a time and each round on the path's next flow, so no flow
+        is probed back to back (a TCP target ignores a quick repeat from the
+        same port) and the waits overlap."""
         d = self.d
         if not self.o.pings:
             return
-        for path in d.paths:
-            if not path.reached:
-                continue
-            flow = path.flows[0]
-            rtts = []
-            for _ in range(self.o.pings):
-                res = self._batch([(flow, PING_HOPS)])
-                if not res:
-                    break
+        reached = [p for p in d.paths if p.reached]
+        rtts: dict[str, list[float]] = {p.id: [] for p in reached}
+        for r in range(self.o.pings):
+            if self._stopping():
+                break
+            owner = {p.flows[r % len(p.flows)]: p for p in reached}
+            for flow, _ttl, addr, rtt, ok in self._batch([(f, PING_HOPS) for f in owner]):
+                path = owner[flow]
                 path.pings_sent += 1
-                _f, _t, addr, rtt, reached = res[0]
-                if reached and addr:
-                    rtts.append(rtt)
+                if ok and addr:
+                    rtts[path.id].append(rtt)
                 else:
                     path.pings_lost += 1
-            path.rtt_to_target_ms = _median(rtts)
+        for p in reached:
+            p.rtt_to_target_ms = _median(rtts[p.id])
 
 
 def available() -> tuple[bool, str]:
