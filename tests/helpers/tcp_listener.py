@@ -1,6 +1,7 @@
 """A TCP listener for the namespace lab: run inside the target namespace, it
 accepts on PORT over IPv4 and IPv6 and appends each peer's address and port,
-one per line, to LOG. Started in the background by CI.
+one per line, to LOG, and prints "ready" once listening. Started by
+tests/test_tcp_lab_live.py.
 
     sudo ip netns exec ptg python3 tcp_listener.py LOG PORT
 """
@@ -16,6 +17,7 @@ for family, host in ((socket.AF_INET, "10.78.9.9"), (socket.AF_INET6, "fd78:9::9
     s.bind((host, port))
     s.listen(16)
     servers.append(s)
+print("ready", flush=True)
 while True:
     ready, _, _ = select.select(servers, [], [])
     for s in ready:
