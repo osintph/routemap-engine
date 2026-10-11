@@ -99,6 +99,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           bash tests/helpers/paths_lab.sh
+          # The TCP flow prober's lab check: a second adapter with tailnet-style
+          # addresses (as on a machine running Tailscale), and a listener at the
+          # target that logs who connects.
+          sudo ip link add tsx0 type dummy && sudo ip link set tsx0 up
+          sudo ip addr add 100.100.7.7/32 dev tsx0 && sudo ip addr add fd7a:115c:a1e0::7/128 dev tsx0
+          touch /tmp/tcplab.log && chmod 666 /tmp/tcplab.log
+          sudo ip netns exec ptg python3 tests/helpers/tcp_listener.py /tmp/tcplab.log 8443 &
+          sleep 1
+          echo "ROUTEMAP_TCP_LAB_LOG=/tmp/tcplab.log" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PATHS_LAB=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=fd78:9::9" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS6=3" >> "$GITHUB_ENV"
@@ -117,4 +126,4 @@ jobs:
           echo "ROUTEMAP_PROBE_MIN_HOPS=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
-      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py
+      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py tests/test_tcp_lab_live.py
