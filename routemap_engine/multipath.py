@@ -81,6 +81,7 @@ PING_HOPS = 64
 # Veitch et al. 2009, Table I: flows needed after k responders, k = 1, 2, ...
 N_K = (9, 17, 24, 33, 42, 51, 60, 70, 81, 91, 102, 113, 125, 136, 148, 161)
 METHOD = "icmp-paris"
+METHODS = ("icmp-paris", "tcp-paris")
 LETTERS = "ABCDEFGHIJKLMNOP"
 
 
@@ -154,7 +155,8 @@ class Discovery:
     method: str = METHOD
 
     def to_dict(self) -> dict:
-        return {"method": self.method, "at_least": True, "af": self.af,
+        return {"method": self.method, **({"port": probe.TCP_FLOW_PORT} if self.method == "tcp-paris" else {}),
+                "at_least": True, "af": self.af,
                 "paths": [p.to_dict() for p in self.paths], "per_packet_hops": list(self.per_packet_hops),
                 "probes_sent": self.probes_sent, "flows": self.flows_used, "paths_capped": self.paths_capped,
                 "stopped_by": self.stopped_by, "seconds": round(self.seconds, 1)}
@@ -166,15 +168,22 @@ class Discovery:
         lines = [f"traceroute to {self.target} ({self.address}), {last} hops max, "
                  f"{8 + len(probe.PAYLOAD)} byte packets, {probe.HEADER_MARK}, paths"]
         for ttl in range(1, last + 1):
-            replies = [probe.Reply(a, _mean(self.rtts.get((ttl, a), []))) for a in self.responders.get(ttl, [])]
+            replies = [probe.Reply(a, _median(self.rtts.get((ttl, a), []))) for a in self.responders.get(ttl, [])]
             if self.silent.get(ttl) or not replies:
                 replies.append(probe.Reply(None, None))
             lines.extend(probe.format_hop(ttl, replies))
         return "\n".join(lines) + "\n"
 
 
-def _mean(values: list[float]) -> float | None:
-    return sum(values) / len(values) if values else None
+def _median(values: list[float]) -> float | None:
+    """The median: one slow ICMP reply (1,065 ms at a hop that otherwise
+    answers in tens, the Windows TCP release check, hop 6) must not move a
+    path's latency, and a mean would."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
 
 
 def n_k(k: int) -> int:
@@ -201,7 +210,8 @@ class Discoverer:
         self.cancel = cancel
         self.deadline = deadline
         self.on_progress = on_progress
-        self.d = Discovery(target, address, probe.family_of(address))
+        self.d = Discovery(target, address, probe.family_of(address),
+                           method=getattr(transport, "METHOD", METHOD))
         self._seq = secrets.randbelow(0x10000)
         self._last_send: float | None = None
         self._pending: dict[int, tuple[int, int, float]] = {}       # seq -> (flow, ttl, sent at)
@@ -458,7 +468,7 @@ class Discoverer:
             for t in range(1, len(rep) + 1):
                 vals = [self._result[(f, t)][1] for f in flows
                         if (f, t) in self._result and self._result[(f, t)][0] == rep[t - 1]]
-                rtts.append(_mean([v for v in vals if v is not None]))
+                rtts.append(_median([v for v in vals if v is not None]))
             for t in per_packet:
                 if t <= len(rep):
                     rep[t - 1] = None
@@ -484,7 +494,7 @@ class Discoverer:
                     rtts.append(rtt)
                 else:
                     path.pings_lost += 1
-            path.rtt_to_target_ms = _mean(rtts)
+            path.rtt_to_target_ms = _median(rtts)
 
 
 def available() -> tuple[bool, str]:
@@ -502,5 +512,7 @@ def discover(target: str, *, family: str = "auto", options: Options | None = Non
         raise RuntimeError(why)
     address = probe.resolve(target, family)
     probe.check_route(address)
-    return Discoverer(target, address, probe.FlowTransport(address), options=options, cancel=cancel,
+    transport = (probe.TcpFlowTransport(address) if probe.flow_method() == probe.TcpFlowTransport.METHOD
+                 else probe.FlowTransport(address))
+    return Discoverer(target, address, transport, options=options, cancel=cancel,
                       deadline=deadline, on_progress=on_progress).run()

@@ -140,10 +140,16 @@ def test_a_name_without_the_asked_family_says_so(monkeypatch):
         probe.resolve("v4only.example", "6")
 
 
-def test_windows_says_why_it_cannot_hold_a_flow(monkeypatch):
+def test_windows_holds_flows_with_tcp_from_10_2004_and_says_why_before(monkeypatch):
+    """D3, option A: Windows' ICMP API cannot hold a flow; TCP connects with
+    TCP_FAIL_CONNECT_ON_ICMP_ERROR can, on Windows 10 2004 (build 19041) or later."""
+    from types import SimpleNamespace
     monkeypatch.setattr(probe.sys, "platform", "win32")
+    monkeypatch.setattr(probe.sys, "getwindowsversion", lambda: SimpleNamespace(build=26200), raising=False)
+    assert probe.flow_available() == (True, "") and probe.flow_method() == "tcp-paris"
+    monkeypatch.setattr(probe.sys, "getwindowsversion", lambda: SimpleNamespace(build=18363), raising=False)
     ok, why = probe.flow_available()
-    assert not ok and "identifier and sequence number" in why
+    assert not ok and "Windows 10 version 2004" in why
 
 
 def test_no_route_for_the_family_is_one_clear_error_before_any_probe(monkeypatch):
