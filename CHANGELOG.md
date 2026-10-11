@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.7.0] - 2026-10-11
 
+Published 2026-10-11 to PyPI and GitHub Releases.
+
 ### Added
 
 - **Path discovery on Windows**, without administrator rights: TCP probes
