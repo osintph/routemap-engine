@@ -122,4 +122,4 @@ jobs:
           echo "ROUTEMAP_PROBE_MIN_HOPS=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
-      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py tests/test_tcp_lab_live.py
+      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py tests/test_tcp_lab_live.py tests/test_tcp_reuse_live.py
