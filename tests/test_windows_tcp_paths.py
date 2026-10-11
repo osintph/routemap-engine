@@ -37,6 +37,12 @@ class FakeSock:
         self.error, self.icmp = 0, b""
         FakeSock.made.append(self)
 
+    def listen(self, *a):
+        raise AssertionError("a probe socket must never listen")
+
+    def accept(self, *a):
+        raise AssertionError("a probe socket must never accept")
+
     def setsockopt(self, level, name, value):
         self.opts.append((level, name, value))
 
@@ -61,7 +67,7 @@ class FakeSock:
 
 def test_one_tcp_connect_per_probe_holding_the_flow_and_reading_the_router():
     FakeSock.made = []
-    t = probe.TcpFlowTransport("193.99.144.80", socket_factory=FakeSock, clock=lambda: 10.0,
+    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10", socket_factory=FakeSock, clock=lambda: 10.0,
                                select=lambda r, w, x, timeout: ([], w, []))
     t.send(0, 5, 101)
     t.send(1, 5, 102)
@@ -82,7 +88,7 @@ def test_one_tcp_connect_per_probe_holding_the_flow_and_reading_the_router():
 
 def test_a_refused_connection_is_the_target_too():
     FakeSock.made = []
-    t = probe.TcpFlowTransport("193.99.144.80", socket_factory=FakeSock, clock=lambda: 1.0,
+    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10", socket_factory=FakeSock, clock=lambda: 1.0,
                                select=lambda r, w, x, timeout: ([], [], x))
     t.send(0, 30, 7)
     FakeSock.made[0].error = probe.WSAECONNREFUSED
@@ -164,7 +170,7 @@ def test_a_flow_is_never_two_connections_at_once():
         for s in w:
             s.error, s.icmp = probe.WSAEHOSTUNREACH, info("198.51.100.141")
         return [], w, []
-    t = probe.TcpFlowTransport("193.99.144.80", socket_factory=FakeSock, clock=lambda: now[0], select=select)
+    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10", socket_factory=FakeSock, clock=lambda: now[0], select=select)
     t.send(0, 5, 1)
     t.send(0, 6, 2)
     first, second = FakeSock.made
@@ -176,6 +182,71 @@ def test_a_connect_refused_locally_is_not_a_probe_in_flight():
     class Busy(FakeSock):
         def connect_ex(self, addr):
             return 10048                                   # WSAEADDRINUSE
-    t = probe.TcpFlowTransport("193.99.144.80", socket_factory=Busy, select=lambda r, w, x, timeout: ([], w, []))
+    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10", socket_factory=Busy, select=lambda r, w, x, timeout: ([], w, []))
     t.send(0, 5, 1)
     assert t._open == {} and t.read(0.1) == []
+
+
+def test_a_tcp_discovery_is_labelled_tcp_once_analysed():
+    import asyncio
+    from routemap_engine import analyse_paths
+    from routemap_engine.geo import Sources
+    net = OdinNetwork()
+    d = multipath.Discoverer("heise.de", ODIN["target"], net, clock=net.clock,
+                             options=multipath.Options(wait=2.0)).run()
+    route = asyncio.run(analyse_paths(d, None, sources=Sources(hoiho=None, ip_db=None, ptr=None)))
+    assert route.parser_label == "Built-in TCP prober (port 443)"
+    assert route.to_dict()["paths"]["method"] == "tcp-paris"
+
+
+@pytest.mark.parametrize("dst,src", [("193.99.144.80", "192.0.2.10"), ("2a02:2e0:3fe:1001:302::", "2001:db8:5::10")])
+def test_probes_are_bound_to_the_routes_own_address_never_to_every_interface(dst, src):
+    """CodeQL py/bind-socket-all-network-interfaces: the bound address is the
+    one the system routes the target from (a VPN or tailnet adapter on the
+    same machine must not carry probes), with the flow's port; IPv4 and IPv6."""
+    FakeSock.made = []
+    asked = []
+    t = probe.TcpFlowTransport(dst, windows=True, socket_factory=FakeSock,
+                               source_for=lambda d: (asked.append(d), src)[1],
+                               select=lambda r, w, x, timeout: ([], [], []))
+    t.send(3, 7, 1)
+    sock = FakeSock.made[0]
+    assert asked == [dst] and sock.bound == (src, t.sport(3))
+    assert sock.bound[0] not in ("", "0.0.0.0", "::")
+    assert sock.family == (socket.AF_INET6 if ":" in dst else socket.AF_INET)
+
+
+def test_the_route_source_is_what_the_system_would_use():
+    """No mock: probe._source_for against loopback, both families."""
+    t4 = probe.TcpFlowTransport("127.0.0.1", socket_factory=FakeSock)
+    assert t4.src == "127.0.0.1"
+    try:
+        t6 = probe.TcpFlowTransport("::1", socket_factory=FakeSock)
+    except OSError:
+        pytest.skip("no IPv6 loopback here")
+    assert t6.src == "::1"
+
+
+def test_a_real_probe_socket_never_listens():
+    """A real socket, a real connect to a closed loopback port: the probe
+    socket is in SYN-SENT or closed, never LISTEN, and connects out."""
+    import socket as s
+    with s.socket() as finder:
+        finder.bind(("127.0.0.1", 0))
+        port = finder.getsockname()[1]
+    t = probe.TcpFlowTransport("127.0.0.1", port=port)
+    t.send(0, 64, 1)
+    sock = next(iter(t._open.values()))[0]
+    assert sock.getsockname()[0] == "127.0.0.1"
+    try:
+        listening = sock.getsockopt(s.SOL_SOCKET, s.SO_ACCEPTCONN)
+    except (AttributeError, OSError):
+        listening = None                     # macOS does not report it; Linux and Windows CI do
+    assert listening in (0, None)
+    got = []
+    for _ in range(20):
+        got += t.read(0.1)
+        if got:
+            break
+    assert [(a.address, a.reached) for a in got] == [("127.0.0.1", True)]      # refused = the target
+    t.close()

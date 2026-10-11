@@ -560,10 +560,15 @@ class TcpFlowTransport:
     METHOD = "tcp-paris"
 
     def __init__(self, dst: str, port: int = TCP_FLOW_PORT, *, socket_factory=None, clock=time.perf_counter,
-                 select=None, expire_after: float = 3.0):
+                 select=None, expire_after: float = 3.0, source_for=None, windows: bool | None = None):
         import select as _select
         self.dst, self.port = dst, port
         self.af = family_of(dst)
+        # Bound to the address the system routes *dst* from, never to every
+        # interface: a probe must not leave from another adapter (a VPN or a
+        # tailnet on a multi-homed machine).
+        self.src = (source_for or _source_for)(dst)
+        self.windows = sys.platform.startswith("win") if windows is None else windows
         self._socket = socket_factory or socket.socket
         self._clock = clock
         self._select = select or _select.select
@@ -584,13 +589,13 @@ class TcpFlowTransport:
         sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("::" if v6 else "0.0.0.0", self.sport(flow)))
+            sock.bind((self.src, self.sport(flow)))
             if v6:
                 sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_UNICAST_HOPS, ttl)
             else:
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
-            sock.setsockopt(socket.IPPROTO_TCP, TCP_NOSYNRETRIES, 1)
-            sock.setsockopt(socket.IPPROTO_TCP, TCP_FAIL_CONNECT_ON_ICMP_ERROR, 1)
+            for name, value in self._tcp_options():
+                sock.setsockopt(socket.IPPROTO_TCP, name, value)
             sock.setblocking(False)
             started = sock.connect_ex((self.dst, self.port))
             if started not in (0, WSAEWOULDBLOCK, errno.EINPROGRESS, errno.EWOULDBLOCK):
@@ -599,6 +604,15 @@ class TcpFlowTransport:
             self._drop(sock)
             return
         self._open[seq] = (sock, flow, self._clock())
+
+    def _tcp_options(self) -> tuple[tuple[int, int], ...]:
+        """Windows: one SYN, and a router's ICMP error fails the connect.
+        Elsewhere (the Linux lab that tests this class) one SYN only: there the
+        option numbers above mean other things."""
+        if self.windows:
+            return ((TCP_NOSYNRETRIES, 1), (TCP_FAIL_CONNECT_ON_ICMP_ERROR, 1))
+        syncnt = getattr(socket, "TCP_SYNCNT", None)
+        return ((syncnt, 1),) if syncnt is not None else ()
 
     def _drop(self, sock):
         try:
@@ -627,9 +641,9 @@ class TcpFlowTransport:
         for sock in set(writable) | set(failed):
             seq = by_sock[sock]
             err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-            if err in (0, WSAECONNREFUSED):
+            if err in (0, WSAECONNREFUSED, errno.ECONNREFUSED):
                 out.append(FlowAnswer(seq, self.dst, True, now))
-            else:
+            elif self.windows:
                 try:
                     address, _kind, _code = parse_icmp_error_info(
                         sock.getsockopt(socket.IPPROTO_TCP, TCP_ICMP_ERROR_INFO, 64))
