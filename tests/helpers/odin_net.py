@@ -147,7 +147,10 @@ class Net:
     def make_transport(self):
         kw = dict(windows=True, source_for=lambda d: "192.0.2.10", socket_factory=self.socket,
                   clock=self.clock, select=self.select, expire_after=3.0)
-        if "sleep" in inspect.signature(probe.TcpFlowTransport.__init__).parameters:
+        params = inspect.signature(probe.TcpFlowTransport.__init__).parameters
+        if "no_retransmit" in params:
+            kw["no_retransmit"] = lambda sock: True       # simulated sockets: no Windows ioctl
+        if "sleep" in params:
             kw["sleep"] = self.clock.sleep
         else:                                         # the 0.4.0-beta.1 transport slept for real
             import types
