@@ -101,6 +101,10 @@ def test_case_and_trailing_dot_do_not_matter():
     ("be101.lon1-eri1-g1-nc5.uk.eu", "Erith"),
     ("be102.bhs-g1-nc5.qc.ca", "Beauharnois"),
     ("vl1332.was1-vin1-g1-nc5.wa.us", "Vint Hill"),
+    # The IPv6 release check (vps-c117642c to heise.de, 11 Oct 2026), hop 9.
+    ("be104.fra-fra15-sbb2-8k.de.eu", "Frankfurt"),
+    # A trace to OVH's Mumbai speed-test host, through Hillsboro.
+    ("pdx1-hil1-vac1-a75-1-firewall.ovh.us", "Hillsboro"),
 ])
 def test_ovh_backbone_hostnames_resolve(hostname, city):
     record = sitecodes.lookup(hostname)
@@ -113,11 +117,15 @@ def test_ovh_backbone_hostnames_resolve(hostname, city):
     "relaxed.fr.eu",                   # no router name shape
     "www.fr.eu",
     "foo-bar1.fr.eu",                  # not a site OVH publishes
-    "be101.sbg-g1-nc5.de.eu",          # a zone not seen in a real trace yet
+    "be101.mad-x-sbb1-8k.es.eu",       # a zone not seen in a real trace yet
     # "nyc" is OVH's name family for both Newark (nyc-ny1) and New York
     # (nyc-ny9): it names no site.
     "nyc-ny9-sbb1-8k.ny.us",
     "nyc-ny1-sbb1-8k.ny.us",
+    # OVH customer and VPS names carry no site code.
+    "vks19366.ip-103-5-15.asia",
+    "ns1008304.ip-135-148-100.us",
+    "foo-bar.ovh.us",
     "be101.lon1-eri1-g1-nc5.uk.eu.example.com",
     "be102.bhs-g1-nc5.qc.ca.example.net",
 ])

@@ -90,8 +90,10 @@ in Hong Kong.
   (`nyc` is OVH's Newark and its New York; `sjo` was also left out this way).
   Hostnames are read only under OVH zones seen in a real trace: `.fr.eu`,
   `.it.eu`, `.sgp.asia` (RIPE Atlas measurement 221303797), `.uk.eu`,
-  `.qc.ca`, `.wa.us`, `.ny.us` (traces to OVH's speed-test hosts, 11 Oct
-  2026); another zone is added when it is seen. Gravelines, Beauharnois, Erith and Vint Hill are in
+  `.qc.ca`, `.wa.us`, `.ny.us`, `.ovh.us` (traces to OVH's speed-test hosts,
+  11 Oct 2026), `.de.eu` (the IPv6 release check); another zone is added
+  when it is seen. The weathermap names routers but never their DNS names,
+  so it cannot confirm a zone by itself. Gravelines, Beauharnois, Erith and Vint Hill are in
   `cities.tsv` for this (see above); Limburg is GeoNames' "Limburg an der
   Lahn". Refresh one carrier without touching the others:
   `python -m routemap_engine.sitegen --only ovh`.

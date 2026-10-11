@@ -77,9 +77,14 @@ CARRIERS = {
         # traces on 11 Oct 2026 to OVH's own speed-test hosts in Gravelines,
         # Erith, Beauharnois and Vint Hill (be102.lil2-gra1-sbb1-nc5.fr.eu,
         # be101.lon1-eri1-g1-nc5.uk.eu, be102.bhs-g1-nc5.qc.ca,
-        # vl1332.was1-vin1-g1-nc5.wa.us, nyc-ny9-sbb1-8k.ny.us). Only zones
-        # seen in a real trace are listed; another is added when one is seen.
-        "suffixes": (".fr.eu", ".it.eu", ".uk.eu", ".sgp.asia", ".qc.ca", ".wa.us", ".ny.us"),
+        # vl1332.was1-vin1-g1-nc5.wa.us, nyc-ny9-sbb1-8k.ny.us), the IPv6
+        # release check (be104.fra-fra15-sbb2-8k.de.eu) and a trace to OVH's
+        # Mumbai speed-test host through Hillsboro
+        # (pdx1-hil1-vac1-a75-1-firewall.ovh.us, under OVH's own domain).
+        # OVH's weathermap names routers but never their DNS names, so a zone
+        # is listed only once seen in a real trace.
+        "suffixes": (".fr.eu", ".it.eu", ".uk.eu", ".de.eu", ".sgp.asia", ".qc.ca", ".wa.us", ".ny.us",
+                     ".ovh.us"),
         "exclude": (),
         # "be101.sbg-g1-nc5" leaves "sbg-g1-nc5" as the label; the site code is
         # the router name's first part ("sbg", "sin1").

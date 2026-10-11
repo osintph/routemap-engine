@@ -143,3 +143,25 @@ def test_the_four_places_are_in_the_town_list():
     for name, cc in (("Gravelines", "FR"), ("Beauharnois", "CA"), ("Erith", "GB"), ("Vint Hill Park", "US")):
         assert any(c["name"] == name and c["cc"] == cc for c in cities.search(name)), name
 
+
+def test_ovh_frankfurt_from_the_ipv6_release_check_places_and_passes_the_round_trip():
+    """Hop 9 of the IPv6 release check (vps-c117642c to heise.de): OVH's
+    Frankfurt router, 15.9 ms from an OVH box in France. The IP database
+    said only "FR"; the router's name says Frankfurt. From Gravelines (the
+    French OVH data centre farthest from Frankfurt, about 470 km) it is inside
+    the round trip even with no slack at all."""
+    from routemap_engine import geo
+    text = ("traceroute to heise.de (2a02:2e0:3fe:1001:302::), 30 hops max\n"
+            " 1  2001:41d0:305:2100::1  0.3 ms\n"
+            " 9  2001:41d0::43f  15.9 ms  17.4 ms  19.9 ms\n")
+
+    async def ptr(addresses):
+        return {"2001:41d0::43f": "be104.fra-fra15-sbb2-8k.de.eu"} if "2001:41d0::43f" in addresses else {}
+    gravelines = (50.99, 2.13)
+    for slack in (geo.SLACK_KM, 0.0):
+        route = asyncio.run(analyse(text, gravelines, origin_slack_km=slack,
+                                    sources=Sources(hoiho=None, ip_db=None, ptr=ptr)))
+        hop = next(h for h in route.hops if h["hop"] == 9)
+        assert hop["source"] == "site-code" and hop["place"] == "Frankfurt, DE", hop
+        assert hop["distance_km"] <= hop["rtt_budget_km"] and hop["distance_km"] < 500
+
