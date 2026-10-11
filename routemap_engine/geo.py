@@ -636,8 +636,7 @@ def neighbour_check(located: list[dict]) -> list[dict]:
         nxt = next((e for e in located[start + len(run):] if placed(e)), None)
         if prev is None or nxt is None:
             continue
-        if haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"]) > NEIGHBOUR_SAME_AREA_KM:
-            continue
+        same_area = haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"]) <= NEIGHBOUR_SAME_AREA_KM
         away_prev = haversine_km(prev["lat"], prev["lon"], entry["lat"], entry["lon"])
         away_next = haversine_km(nxt["lat"], nxt["lon"], entry["lat"], entry["lon"])
         if min(away_prev, away_next) < NEIGHBOUR_DETOUR_KM:
@@ -655,9 +654,12 @@ def neighbour_check(located: list[dict]) -> list[dict]:
         detour = away_prev + away_next - haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"])
         needed_next = detour / (2 * KM_PER_MS_ROUND_TRIP)
         rose_next = (nxt["min_rtt_ms"] - prev["min_rtt_ms"]) if nxt.get("min_rtt_ms") is not None else None
-        if rose >= needed and (rose_next is None or rose_next >= needed_next):
+        # The first test asks only for a hop between two in one area (out and
+        # back); the second holds wherever the neighbours are.
+        first_fails = same_area and rose < needed
+        if not first_fails and (rose_next is None or rose_next >= needed_next):
             continue
-        if rose < needed:
+        if first_fails:
             why = (f"{ANNOT_RTT_IMPOSSIBLE}: {away_prev:,.0f} km from hop {prev['hop']} "
                    f"({prev.get('place') or 'placed'}) and back again by hop {nxt['hop']}, "
                    f"which needs {needed:,.0f} ms more RTT; it rose {max(rose, 0):,.0f} ms" + same)
