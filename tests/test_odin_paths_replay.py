@@ -180,3 +180,47 @@ def test_a_a_retransmitted_answer_does_not_time_the_hop():
     for line in d.trace_text().splitlines()[1:]:
         if odin_net.TARGET in line:
             assert all(float(x) < 1000 for x in __import__("re").findall(r"(\d+\.\d+) ms", line)), line
+
+
+def test_2_a_hop_with_several_routers_is_placed_by_its_own_router():
+    """A merged row's first hostname can be another router's (the first name
+    found at the hop); its placement must come from its own address's rows.
+    The ODIN run 3 replay, every address: one placement."""
+    import pathlib
+    import time
+    from routemap_engine import probe
+    saved = (odin_net.FIXTURE, odin_net.PATHS, odin_net.PLACES, set(odin_net.UNREACHED))
+    odin_net.FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "odin_paths_040b2t3.txt"
+    odin_net.PATHS, odin_net.PLACES = odin_net.parse()
+    try:
+        net = odin_net.Net()
+        try:
+            d = multipath.Discoverer("heise.de", odin_net.TARGET, net.make_transport(), clock=net.clock,
+                                     deadline=net.clock() + 3600).run()
+        finally:
+            probe.time = time
+        names = {"62.115.140.40": "mei-b6-link.ip.twelve99.net", "62.115.139.44": "sng-b6-link.ip.twelve99.net",
+                 "62.115.137.184": "sng-b7-link.ip.twelve99.net"}
+
+        async def ptr(addresses):
+            return {a: n for a, n in names.items() if a in addresses}
+
+        async def ip_db(addresses):
+            out = {}
+            for a in addresses:
+                place = odin_net.PLACES.get(a)
+                if place in odin_net.CITIES:
+                    lat, lon = odin_net.CITIES[place]
+                    out[a] = {"lat": lat, "lon": lon, "city": place.split(",")[0], "cc": place.split(", ")[-1]}
+            return out
+        route = asyncio.run(analyse_paths(d, (14.68, 121.04), sources=Sources(hoiho=None, ip_db=ip_db, ptr=ptr)))
+    finally:
+        odin_net.FIXTURE, odin_net.PATHS, odin_net.PLACES = saved[:3]
+        odin_net.UNREACHED.clear()
+        odin_net.UNREACHED.update(saved[3])
+    seen: dict[str, set] = {}
+    for h in route.hops + [x for p in route.paths["paths"] for x in p["located"]]:
+        if h.get("address"):
+            seen.setdefault(h["address"], set()).add((h.get("place"), h.get("source")))
+    assert not {a: v for a, v in seen.items() if len(v) > 1}
+    assert seen["62.115.140.40"] == {("Marseille, FR", "site-code")}, seen["62.115.140.40"]

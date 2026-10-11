@@ -208,11 +208,18 @@ def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
     detour its neighbours exclude) is ruled out for all, and otherwise every
     row shows the same place. Edits the rows in place."""
     rows: dict[str, list[dict]] = {}
-    for entry in main + [h for path in paths for h in path]:
+    sources: dict[str, list[dict]] = {}
+    # A path's rows come first, and a main row only counts as evidence when
+    # one router answered its hop: with several, its hostname can be another
+    # router's (the first name found at the hop), and so its placement too.
+    for entry in [h for path in paths for h in path] + main:
         if entry.get("address"):
             rows.setdefault(entry["address"], []).append(entry)
-    for entries in rows.values():
-        rejected = next((e for e in entries if geo.ANNOT_RTT_IMPOSSIBLE in (e.get("annotations") or [])
+            if len(entry.get("addresses") or [entry["address"]]) == 1:
+                sources.setdefault(entry["address"], []).append(entry)
+    for addr, entries in rows.items():
+        evidence = sources.get(addr) or []
+        rejected = next((e for e in evidence if geo.ANNOT_RTT_IMPOSSIBLE in (e.get("annotations") or [])
                          or str(e.get("reason") or "").startswith(geo.ANNOT_RTT_IMPOSSIBLE)), None)
         if rejected is not None:
             for e in entries:
@@ -224,10 +231,20 @@ def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
                 if "annotations" in e and geo.ANNOT_RTT_IMPOSSIBLE not in e["annotations"]:
                     e["annotations"] = list(e["annotations"]) + [geo.ANNOT_RTT_IMPOSSIBLE]
             continue
-        placed = next((e for e in entries if e.get("lat") is not None), None)
+        placed = next((e for e in evidence if e.get("lat") is not None), None)
         if placed is None:
+            for e in entries:                       # nothing places this router: no borrowed place
+                if len(e.get("addresses") or [e["address"]]) > 1 and e.get("lat") is not None:
+                    for key in ("lat", "lon", "place", "cc", "distance_km", "rtt_budget_km"):
+                        if key in e:
+                            e[key] = None
+                    e["source"], e["hostname"] = geo.SOURCE_UNRESOLVED, None
+                    e.pop("ip_provider", None)
+                    e.pop("precision", None)
             continue
         for e in entries:
+            if len(e.get("addresses") or [e["address"]]) > 1:
+                e["hostname"] = placed.get("hostname")   # the name of the router it is placed by
             for key in _PLACE_KEYS:
                 if placed.get(key) is not None:
                     e[key] = placed[key]

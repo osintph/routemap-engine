@@ -32,6 +32,9 @@ CITIES = {"Manila, PH": (14.6, 121.0), "Hong Kong, HK": (22.3, 114.2), "Singapor
           "Lappersdorf, DE": (49.05, 12.09), "Hanover, DE": (52.37, 9.73), "Chicago, US": (41.88, -87.63)}
 
 
+UNREACHED: set[str] = set()
+
+
 def parse():
     """{letter: {ttl: (address, rtt_ms)}} and {address: printed place} from the table."""
     rows = []
@@ -41,16 +44,19 @@ def parse():
         m = ROW.match(line)
         ttl, sub, middle, addr, rtt = int(m.group(1)), m.group(2), m.group(3), m.group(4), m.group(5)
         tokens = middle.split()
-        letters = []
+        letters, used = [], 0
         for tok in tokens:
             if tok == "all":
-                letters = list(LETTERS)
+                letters, used = list(LETTERS), used + 1
                 break
             if len(tok) == 1 and tok in LETTERS:
                 letters.append(tok)
+            elif re.fullmatch(r"[A-P]-[A-P]", tok):          # a range, as 0.4.0-beta.2 prints them
+                letters += list(LETTERS[LETTERS.index(tok[0]):LETTERS.index(tok[2]) + 1])
             else:
                 break
-        place = " ".join(tokens[len(letters) if letters != list(LETTERS) or "all" not in tokens else 1:]).strip()
+            used += 1
+        place = " ".join(tokens[used:]).strip()
         rows.append((ttl, sub, letters, addr, float(rtt) if rtt else None, place))
     has_subs = {ttl for ttl, sub, *_ in rows if sub}
     paths = {x: {} for x in LETTERS}
@@ -64,10 +70,15 @@ def parse():
             if addr != "*":
                 paths[x].setdefault(ttl, (addr, rtt))
     shortest = min(t for x in LETTERS for t, (a, _r) in paths[x].items() if a == TARGET)
+    UNREACHED.clear()
     for x in LETTERS:
         hops = paths[x]
-        printed = min(t for t, (a, _r) in hops.items() if a == TARGET)
+        printed = min((t for t, (a, _r) in hops.items() if a == TARGET), default=None)
         last_router = max(t for t, (a, _r) in hops.items() if a != TARGET)
+        if printed is None:                           # never reached: the target ignores this path
+            UNREACHED.add(x)
+            hops[1] = ("198.51.100.1", 1.4)
+            continue
         end = min(printed, max(last_router + 1, shortest))
         paths[x] = {t: v for t, v in hops.items() if t < end}
         paths[x][end] = (TARGET, 250.0)
@@ -84,6 +95,8 @@ def letter_of(flow: int) -> str:
 
 def true_sequence(flow: int) -> tuple:
     hops = PATHS[letter_of(flow)]
+    if letter_of(flow) in UNREACHED:
+        return tuple(hops[t][0] if t in hops else None for t in range(1, max(hops) + 1))
     end = max(hops)
     return tuple(hops[t][0] if t in hops else None for t in range(1, end + 1))
 
@@ -125,7 +138,9 @@ class Net:
         hops = PATHS[letter_of(flow)]
         end = max(hops)
         now = self.clock.t
-        if sock.ttl >= end:
+        if letter_of(flow) in UNREACHED and sock.ttl > end:
+            return                                        # the target never answered this path
+        if sock.ttl >= end and letter_of(flow) not in UNREACHED:
             last = self.connected_at.get(flow)
             if last is not None and now - last < 1.0:
                 self.refused_reuse += 1
