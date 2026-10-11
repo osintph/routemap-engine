@@ -522,6 +522,13 @@ TCP_NOSYNRETRIES = 9
 TCP_FAIL_CONNECT_ON_ICMP_ERROR = 18
 TCP_ICMP_ERROR_INFO = 19
 WSAEWOULDBLOCK, WSAECONNREFUSED, WSAEHOSTUNREACH = 10035, 10061, 10065
+# After a probe reached the target (a completed or refused connection), the
+# same flow waits this long before its next probe: heise.de ignored a second
+# connection attempt from the same source port 0.25 s after the first
+# completed, in 9 of 9 tries, and answered at 1 s in 10 of 10 (measured from
+# Manila, 11 Oct 2026). Windows sends one SYN with no retry, so an ignored
+# attempt would read as loss on the path.
+TCP_REUSE_GAP = 1.5
 
 
 def parse_icmp_error_info(raw: bytes) -> tuple[str | None, int | None, int | None]:
@@ -558,9 +565,11 @@ class TcpFlowTransport:
     another interface. Every result carries its method ("tcp-paris")."""
 
     METHOD = "tcp-paris"
+    ONE_PER_FLOW = True                      # one connection per five-tuple at a time
 
     def __init__(self, dst: str, port: int = TCP_FLOW_PORT, *, socket_factory=None, clock=time.perf_counter,
-                 select=None, expire_after: float = 3.0, source_for=None, windows: bool | None = None):
+                 select=None, expire_after: float = 3.0, source_for=None, windows: bool | None = None,
+                 sleep=time.sleep, reuse_gap: float = TCP_REUSE_GAP):
         import select as _select
         self.dst, self.port = dst, port
         self.af = family_of(dst)
@@ -576,15 +585,33 @@ class TcpFlowTransport:
         self._base = 40000 + secrets.randbelow(10000)
         self._open: dict[int, tuple] = {}        # seq -> (socket, flow, sent at)
         self._kept: list[FlowAnswer] = []        # answers read while a flow was freed
+        self._sleep = sleep
+        self._reuse_gap = reuse_gap
+        self._reached: dict[int, float] = {}     # flow -> when it last reached the target
+        self.local_failures = 0
 
     def sport(self, flow: int) -> int:
         return self._base + flow
 
-    def send(self, flow: int, ttl: int, seq: int):
-        # A five-tuple carries one connection at a time: a flow's earlier
-        # probe is answered or expired before the next one goes out.
-        while any(f == flow for _s, f, _t in self._open.values()):
-            self._kept.extend(self._poll(0.05))
+    def ready_at(self, flow: int) -> float:
+        """When *flow* may probe again: :data:`TCP_REUSE_GAP` after it last
+        reached the target, at once otherwise."""
+        at = self._reached.get(flow)
+        return 0.0 if at is None else at + self._reuse_gap
+
+    def forget(self, seq: int):
+        """The caller stopped waiting for *seq*: close its socket now."""
+        entry = self._open.pop(seq, None)
+        if entry is not None:
+            self._drop(entry[0])
+
+    def send(self, flow: int, ttl: int, seq: int) -> bool:
+        """Start one probe; False when it never left this machine. A
+        five-tuple carries one connection at a time, so an earlier probe of
+        the same flow that is still open is given up first (the discoverer
+        has stopped waiting for it)."""
+        for old in [s for s, (_sock, f, _t) in self._open.items() if f == flow]:
+            self.forget(old)
         v6 = self.af == 6
         sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -602,8 +629,10 @@ class TcpFlowTransport:
                 raise OSError(started, "connect refused locally")
         except OSError:
             self._drop(sock)
-            return
+            self.local_failures += 1
+            return False
         self._open[seq] = (sock, flow, self._clock())
+        return True
 
     def _tcp_options(self) -> tuple[tuple[int, int], ...]:
         """Windows: one SYN, and a router's ICMP error fails the connect.
@@ -632,7 +661,7 @@ class TcpFlowTransport:
 
     def _poll(self, timeout: float) -> list[FlowAnswer]:
         if not self._open:
-            time.sleep(max(0.0, min(timeout, 0.05)))
+            self._sleep(max(0.0, min(timeout, 0.05)))
             return []
         by_sock = {entry[0]: seq for seq, entry in self._open.items()}
         _, writable, failed = self._select([], list(by_sock), list(by_sock), max(0.0, timeout))
@@ -641,8 +670,10 @@ class TcpFlowTransport:
         for sock in set(writable) | set(failed):
             seq = by_sock[sock]
             err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            flow = self._open[seq][1]
             if err in (0, WSAECONNREFUSED, errno.ECONNREFUSED):
                 out.append(FlowAnswer(seq, self.dst, True, now))
+                self._reached[flow] = now
             elif self.windows:
                 try:
                     address, _kind, _code = parse_icmp_error_info(
@@ -652,6 +683,8 @@ class TcpFlowTransport:
                 if address:
                     reached = ipaddress.ip_address(address) == ipaddress.ip_address(self.dst)
                     out.append(FlowAnswer(seq, address, reached, now))
+                    if reached:
+                        self._reached[flow] = now
             self._drop(sock)
             self._open.pop(seq, None)
         for seq, (sock, _flow, sent) in list(self._open.items()):

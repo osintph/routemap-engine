@@ -160,23 +160,17 @@ def test_a_paths_latency_is_the_median_of_its_samples():
 
 
 def test_a_flow_is_never_two_connections_at_once():
-    """One five-tuple, one connection: the second probe of a flow waits for
-    the first's answer, which is still returned by the next read."""
+    """One five-tuple, one connection: a flow's next probe closes an earlier
+    one still open (the discoverer stopped waiting for it) and never blocks."""
     FakeSock.made = []
-    now = [0.0]
-
-    def select(r, w, x, timeout):
-        now[0] += timeout
-        for s in w:
-            s.error, s.icmp = probe.WSAEHOSTUNREACH, info("198.51.100.141")
-        return [], w, []
-    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10", socket_factory=FakeSock, clock=lambda: now[0], select=select)
+    t = probe.TcpFlowTransport("193.99.144.80", windows=True, source_for=lambda d: "192.0.2.10",
+                               socket_factory=FakeSock, clock=lambda: 0.0,
+                               select=lambda r, w, x, timeout: ([], [], []))
     t.send(0, 5, 1)
     t.send(0, 6, 2)
     first, second = FakeSock.made
     assert first.bound == second.bound and first.closed and not second.closed
-    assert [a.seq for a in t.read(0.1)] == [1, 2]
-
+    assert list(t._open) == [2]
 
 def test_a_connect_refused_locally_is_not_a_probe_in_flight():
     class Busy(FakeSock):

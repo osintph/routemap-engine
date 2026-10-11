@@ -195,6 +195,40 @@ PATH_HOP_FIELDS = ("hop", "address", "hostname", "lat", "lon", "place", "cc", "s
                    "min_rtt_ms", "avg_rtt_ms", "reason")
 
 
+_PLACE_KEYS = ("lat", "lon", "place", "cc", "source")
+
+
+def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
+    """One address, one placement in a run. The same router answers at
+    several hops and on several paths, each judged with its own RTT and
+    neighbours; a placement any of them rules out (the round trip, or a
+    detour its neighbours exclude) is ruled out for all, and otherwise every
+    row shows the same place. Edits the rows in place."""
+    rows: dict[str, list[dict]] = {}
+    for entry in main + [h for path in paths for h in path]:
+        if entry.get("address"):
+            rows.setdefault(entry["address"], []).append(entry)
+    for entries in rows.values():
+        rejected = next((e for e in entries if geo.ANNOT_RTT_IMPOSSIBLE in (e.get("annotations") or [])
+                         or str(e.get("reason") or "").startswith(geo.ANNOT_RTT_IMPOSSIBLE)), None)
+        if rejected is not None:
+            for e in entries:
+                for key in ("lat", "lon", "place", "cc", "distance_km", "rtt_budget_km"):
+                    if key in e:
+                        e[key] = None
+                e["source"] = geo.SOURCE_UNRESOLVED
+                e["reason"] = rejected.get("reason")
+                if "annotations" in e and geo.ANNOT_RTT_IMPOSSIBLE not in e["annotations"]:
+                    e["annotations"] = list(e["annotations"]) + [geo.ANNOT_RTT_IMPOSSIBLE]
+            continue
+        placed = next((e for e in entries if e.get("lat") is not None), None)
+        if placed is None:
+            continue
+        for e in entries:
+            for key in _PLACE_KEYS:
+                e[key] = placed.get(key)
+
+
 async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
                         sources: geo.Sources | None = None,
                         progress: geo.ProgressFn | None = None) -> Route:
@@ -224,8 +258,9 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
                 if rtt is not None:
                     hop.rtts_ms.append(round(rtt, 3))
             hops.append(hop)
-        placed = geo.locate_hops(hops, hoiho_records, ip_records, origin) if hops else []
+        placed = geo.neighbour_check(geo.locate_hops(hops, hoiho_records, ip_records, origin)) if hops else []
         entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS} for h in placed]
+    one_place_per_address(located, [entry["located"] for entry in out["paths"]])
     label = PARSER_LABELS.get(parsed.parser, parsed.parser)
     if out.get("method") == "tcp-paris":
         # The trace text is written in the ICMP prober's format; the probes were TCP.

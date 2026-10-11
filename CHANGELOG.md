@@ -2,6 +2,34 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Fixed
+
+Path discovery, from the first real run on Windows (ODIN, 11 Oct 2026):
+
+- **Paths differ only where two flows got answers from different
+  addresses.** A flow whose target answer came hops late, or a silent hop,
+  no longer makes a path of its own; the progress count uses the same rule.
+- **One address, one placement in a run.** Path rows get the neighbour
+  check the main rows get, and a placement any row rules out is ruled out
+  for all (62.115.153.153 was Chicago on some rows, Frankfurt or nothing on
+  others).
+- **A flow ends at the target once.** When the target answers only after
+  silent hops past a flow's last router, that hop is probed again to settle
+  where the target is.
+- **Within the rate caps, nothing waits in line.** The TCP prober gives up a
+  probe when the discoverer does (a flow's next probe waited up to 3 s
+  before), a batch sends whichever flow is free, new flows are probed at all
+  earlier hops in one round, and the path pings go round-robin. The ODIN
+  replay: 1,210 probes in 110 s; 0.7.0 took 384 s for 1,178.
+- **A TCP target's quick-repeat limit is not path loss.** heise.de ignored a
+  second connection attempt from one source port 0.25 s after the first
+  completed (9 of 9) and answered at 1 s (10 of 10). A TCP flow now waits
+  1.5 s after it reached the target, and pings rotate over a path's flows.
+- A probe this machine failed to send is counted in `local_failures`, not as
+  loss.
+
 ## [0.7.0] - 2026-10-11
 
 Published 2026-10-11 to PyPI and GitHub Releases.
