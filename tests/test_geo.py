@@ -452,18 +452,23 @@ def _sandwich(middle, middle_rtt, prev_rtt=211.0, next_rtt=258.0):
     return asyncio.run(geo.resolve(hops, (14.5995, 120.9842), geo.Sources(ip_db=_ip_db_placing(table))))["hops"]
 
 
-@pytest.mark.parametrize("middle,rtt,kept", [
-    (CHICAGO, 257.0, False),     # the heise hop 12 case: 6,960 km detour, RTT rose 46 ms
-    (CHICAGO, 290.0, True),      # rose 79 ms: a detour that long is paid for
-    (AMSTERDAM, 212.0, True),    # 360 km away: not a detour at all
+@pytest.mark.parametrize("middle,rtt,next_rtt,kept", [
+    (CHICAGO, 257.0, 258.0, False),   # the heise hop 12 case: 6,960 km detour, RTT rose 46 ms
+    # Rose 79 ms at the hop itself, but the next hop, reached through it, is
+    # only 47 ms past the previous one: the detour was not paid for (until
+    # 0.7.0 this case was kept; ODIN's Trace drew Frankfurt > Chicago >
+    # Frankfurt on 12 Oct 2026 this way).
+    (CHICAGO, 290.0, 258.0, False),
+    (CHICAGO, 290.0, 290.0, True),    # the next hop paid for it too: kept
+    (AMSTERDAM, 212.0, 258.0, True),  # 360 km away: not a detour at all
 ])
-def test_a_database_placement_between_two_hops_in_one_area_must_pay_for_its_detour(middle, rtt, kept):
-    hops = _sandwich(middle, rtt)
+def test_a_database_placement_between_two_hops_in_one_area_must_pay_for_its_detour(middle, rtt, next_rtt, kept):
+    hops = _sandwich(middle, rtt, next_rtt=next_rtt)
     mid = hops[1]
     assert (mid["source"] == "ip-db") is kept
     if not kept:
         assert mid["lat"] is None and mid["annotations"] == [geo.ANNOT_RTT_IMPOSSIBLE]
-        assert "needs" in mid["reason"]
+        assert "needs" in mid["reason"] or "reached through it" in mid["reason"]
         assert any(c["source"] == "ip-db" and not c["accepted"] for c in mid["candidates"])
     assert hops[0]["source"] == hops[2]["source"] == "ip-db"
 

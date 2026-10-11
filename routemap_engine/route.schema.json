@@ -482,6 +482,19 @@
             "string",
             "null"
           ]
+        },
+        "ip_provider": {
+          "enum": [
+            "ripestat",
+            "dbip"
+          ],
+          "description": "Which IP database tier answered: RIPEstat (online) or DB-IP Lite City (offline)."
+        },
+        "precision": {
+          "enum": [
+            "country"
+          ],
+          "description": "Present only when the hop is placed to country level: the coordinates are a country centroid, not a city."
         }
       }
     },
