@@ -2,7 +2,7 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
-## [Unreleased]
+## [0.7.1] - 2026-10-12
 
 ### Fixed
 
