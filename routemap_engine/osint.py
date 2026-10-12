@@ -33,7 +33,10 @@ def _placed(route: dict) -> list[dict]:
 
 
 def _addresses(hop: dict) -> list[str]:
-    return [a for a in (hop.get("addresses") or []) if a]
+    """A hop's addresses: a trace's hop lists them; a path's hop (a
+    discovery's ``located`` entry) has its one ``address``."""
+    listed = [a for a in (hop.get("addresses") or []) if a]
+    return listed or ([hop["address"]] if hop.get("address") else [])
 
 
 # ------------------------------------------------------------------ RTT steps ---

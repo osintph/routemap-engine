@@ -268,6 +268,12 @@ class Discoverer:
         self._reached_at: dict[int, int] = {}                        # flow -> TTL it reached
         self._stop: str | None = None
         self._local_run = 0
+        # Each path's ten target attempts come out of the same budget: the
+        # discovery stops early enough to leave them, so a run that reaches
+        # the cap still measures every path alike (ODIN, test build 4: "6 of
+        # 7" beside a note promising ten).
+        self._pinging = False
+        self._ping_reserve = min(self.o.pings * MAX_PATHS, self.o.budget // 3)
         self._started = clock()
 
     # ------------------------------------------------------------- probing
@@ -299,6 +305,9 @@ class Discoverer:
         or a stop condition says no."""
         if self.d.probes_sent >= self.o.budget:
             self._stop = self._stop or "budget"
+            return False
+        if not self._pinging and self.d.probes_sent >= self.o.budget - self._ping_reserve:
+            self._stop = self._stop or "budget"   # the rest is the path pings' share
             return False
         if self._stopping():
             return False
@@ -507,8 +516,12 @@ class Discoverer:
             if not self._stop:
                 self._settle_reach(m)
             self._build_paths(m)
-            if not self._stop:
+            if self._stop in (None, "budget"):
+                budget_hit = self._stop == "budget"
+                self._stop, self._pinging = None, True
                 self._ping_paths()
+                if budget_hit and self._stop is None:
+                    self._stop = "budget"
         finally:
             self.t.close()
         if self._stop:

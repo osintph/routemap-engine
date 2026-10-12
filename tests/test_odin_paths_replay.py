@@ -237,3 +237,52 @@ def test_8_a_paths_hop_keeps_the_ip_databases_provider(run):
     route = asyncio.run(analyse_paths(d, (14.6, 121.0), sources=Sources(hoiho=None, ip_db=ip_db, ptr=None)))
     located = [h for p in route.paths["paths"] for h in p["located"] if (h.get("address") or "").startswith("82.98.")]
     assert located and all(h.get("ip_provider") == "dbip" for h in located if h.get("source") == "ip-db")
+
+
+def test_a_a_paths_hops_get_their_asn_from_the_offline_database():
+    """ODIN test build 4: the Paths view showed no AS numbers at all; a
+    path's hop has one ``address``, and the enrichment read only
+    ``addresses``."""
+    from types import SimpleNamespace
+    from routemap_engine import osint
+
+    class Db:
+        def lookup(self, addr):
+            if not addr.startswith("62.115."):
+                return None
+            return SimpleNamespace(asn=1299, org="Arelion Sweden AB", network="62.115.0.0/16")
+    located = [{"hop": 7, "address": "62.115.112.222"}, {"hop": 8, "address": None}]
+    osint.enrich_offline({"hops": located}, Db())
+    assert located[0]["asn"] == 1299 and "asn" not in located[1]
+
+
+def _replay(fixture, **options):
+    import pathlib
+    import time
+    from routemap_engine import probe
+    saved = (odin_net.FIXTURE, odin_net.PATHS, odin_net.PLACES, set(odin_net.UNREACHED))
+    odin_net.FIXTURE = pathlib.Path(__file__).parent / "fixtures" / fixture
+    odin_net.PATHS, odin_net.PLACES = odin_net.parse()
+    try:
+        net = odin_net.Net()
+        try:
+            return multipath.Discoverer("heise.de", odin_net.TARGET, net.make_transport(), clock=net.clock,
+                                        deadline=net.clock() + 3600,
+                                        options=multipath.Options(**options)).run()
+        finally:
+            probe.time = time
+    finally:
+        odin_net.FIXTURE, odin_net.PATHS, odin_net.PLACES = saved[:3]
+        odin_net.UNREACHED.clear()
+        odin_net.UNREACHED.update(saved[3])
+
+
+def test_b_a_run_that_reaches_the_cap_still_gives_every_path_its_ten_attempts():
+    """ODIN test build 4 read "6 of 7", "7 of 7", "3 of 7" beside a note
+    promising ten: the budget ran out during the pings. The discovery now
+    leaves the pings their share, inside the same cap."""
+    d = _replay("odin_paths_040b2t4.txt", budget=1300)
+    assert d.stopped_by == "budget" and d.probes_sent <= 1300
+    reached = [p for p in d.paths if p.reached]
+    assert reached and all(p.pings_sent == multipath.PATH_PINGS for p in reached), \
+        [(p.id, p.pings_sent) for p in reached]
