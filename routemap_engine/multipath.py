@@ -162,6 +162,8 @@ class Discovery:
     paths_capped: bool = False
     stopped_by: str = "complete"          # complete | budget | cancel | deadline | gap | max_hops | local_error
     local_failures: int = 0               # probes this machine failed to send (not network loss)
+    budget: int = MAX_PROBES              # the cap on every probe sent, the target attempts included
+    discovery_probes: int = 0             # probes sent before the target attempts
     seconds: float = 0.0
     method: str = METHOD
 
@@ -170,7 +172,8 @@ class Discovery:
                 "at_least": True, "af": self.af,
                 "paths": [p.to_dict() for p in self.paths], "per_packet_hops": list(self.per_packet_hops),
                 "probes_sent": self.probes_sent, "flows": self.flows_used, "paths_capped": self.paths_capped,
-                "local_failures": self.local_failures,
+                "local_failures": self.local_failures, "budget": self.budget,
+                "discovery_probes": self.discovery_probes,
                 "stopped_by": self.stopped_by, "seconds": round(self.seconds, 1)}
 
     def trace_text(self) -> str:
@@ -260,7 +263,7 @@ class Discoverer:
         self.deadline = deadline
         self.on_progress = on_progress
         self.d = Discovery(target, address, probe.family_of(address),
-                           method=getattr(transport, "METHOD", METHOD))
+                           method=getattr(transport, "METHOD", METHOD), budget=self.o.budget)
         self._seq = secrets.randbelow(0x10000)
         self._last_send: float | None = None
         self._pending: dict[int, tuple[int, int, float]] = {}       # seq -> (flow, ttl, sent at)
@@ -516,6 +519,7 @@ class Discoverer:
             if not self._stop:
                 self._settle_reach(m)
             self._build_paths(m)
+            d.discovery_probes = d.probes_sent
             if self._stop in (None, "budget"):
                 budget_hit = self._stop == "budget"
                 self._stop, self._pinging = None, True

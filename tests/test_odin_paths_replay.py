@@ -286,3 +286,17 @@ def test_b_a_run_that_reaches_the_cap_still_gives_every_path_its_ten_attempts():
     reached = [p for p in d.paths if p.reached]
     assert reached and all(p.pings_sent == multipath.PATH_PINGS for p in reached), \
         [(p.id, p.pings_sent) for p in reached]
+
+
+@pytest.mark.parametrize("budget", [1500, 1300, 900])
+def test_every_probe_sent_stays_within_the_cap(budget):
+    """ODIN test build 5 printed "stopped at the 1,450-probe cap": the total
+    sent, under a cap of 1,500. Discovery plus target attempts never pass the
+    cap; discovery's own share is recorded apart."""
+    d = _replay("odin_paths_040b2t4.txt", budget=budget)
+    assert d.probes_sent <= budget and d.budget == budget
+    assert d.discovery_probes <= d.probes_sent
+    pings = sum(p.pings_sent for p in d.paths)
+    assert d.probes_sent == d.discovery_probes + pings
+    if d.stopped_by == "budget":
+        assert d.discovery_probes <= budget - min(multipath.PATH_PINGS * multipath.MAX_PATHS, budget // 3)
