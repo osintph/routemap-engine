@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.7.1] - 2026-10-12
 
+Published 2026-10-12 to PyPI and GitHub Releases.
+
 ### Fixed
 
 Path discovery, from the first real run on Windows (ODIN, 11 Oct 2026):
