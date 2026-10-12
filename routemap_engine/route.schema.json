@@ -676,6 +676,14 @@
         "local_failures": {
           "type": "integer",
           "minimum": 0
+        },
+        "budget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "discovery_probes": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

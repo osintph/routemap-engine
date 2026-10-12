@@ -29,6 +29,18 @@ Path discovery, from the first real run on Windows (ODIN, 11 Oct 2026):
   1.5 s after it reached the target, and pings rotate over a path's flows.
 - A probe this machine failed to send is counted in `local_failures`, not as
   loss.
+- A run that reaches the probe cap still gives every path its ten target
+  attempts: the discovery stops early enough to leave them their share, and
+  the total, target attempts included, never passes the cap. `budget` and
+  `discovery_probes` record the cap and the discovery's own share.
+- A path's hops get their AS number from the offline database (they have
+  one `address`, which the lookup did not read).
+- A Trace hop the next placed hop rules out is not placed (the detour it
+  implies must show in the next hop's RTT); one address, one placement, in
+  Trace too; a hop several routers answered is placed by its own router.
+- Windows: SYN retransmissions are switched off with `SIO_TCP_INITIAL_RTO`
+  (`TCP_NOSYNRETRIES` did not stop them), and an answer later than the probe
+  wait is not timed.
 
 ## [0.7.0] - 2026-10-11
 
