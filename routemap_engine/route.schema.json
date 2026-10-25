@@ -815,6 +815,14 @@
               }
             }
           }
+        },
+        "ping_interval": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "0.8.0: seconds between rounds of target attempts, at least."
         }
       }
     },
