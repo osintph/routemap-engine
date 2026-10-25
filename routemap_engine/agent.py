@@ -36,7 +36,9 @@ THE CLIENT SIDE (:func:`ssh_argv`, :func:`read_run`)
 MASKING (:func:`mask_first_hops`)
 ---------------------------------
 An agent trace starts in the server provider's network. Those first hops are
-masked by default: listed, but with no address, name or place.
+masked by default: listed, but with no address, name or place. The provider's
+hops are the private ones first, then the public ones in the AS of the first
+public hop, and never fewer than the first two public hops.
 """
 from __future__ import annotations
 
@@ -306,18 +308,22 @@ def read_run(stream: IO[bytes], *, on_line: Callable[[str], None] | None = None,
 
 # ================================================================== masking
 
+MASK_MIN_PUBLIC = 2                   # never fewer public hops masked than this
+
+
 def mask_first_hops(route: dict) -> list[str]:
     """Mask the leading hops of an agent trace that are the server provider's
-    network, in place: the private hops, then the public ones in the same AS
-    as the first public hop (only that one hop when its AS is unknown). The
-    target is never masked. Returns the addresses masked, for the tool text
-    (:func:`mask_text`)."""
+    network, in place: the private hops, then the public hops in the AS of the
+    first public hop, and never fewer than the first :data:`MASK_MIN_PUBLIC`
+    public hops (when the AS is unknown, or a host resells another network,
+    the floor still covers the provider's edge). The target is never masked.
+    Returns the addresses masked, for the tool text (:func:`mask_text`)."""
     hops = route.get("hops") or []
     target = ((route.get("paths") or {}).get("resolved") or route.get("resolved") or {}).get("address")
     masked: list[str] = []
-    provider_asn = None
-    seen_public = False
     numbers: list[int] = []
+    provider_asn = None
+    public_seen = 0
     for hop in hops:
         addrs = list(hop.get("addresses") or ([hop["address"]] if hop.get("address") else []))
         if target and target in addrs:
@@ -325,20 +331,18 @@ def mask_first_hops(route: dict) -> list[str]:
         public = [a for a in addrs if _is_public(a)]
         if public:
             asn = hop.get("asn")
-            if not seen_public:
-                seen_public, provider_asn = True, asn
-            elif provider_asn is None or asn != provider_asn:
+            if public_seen == 0:
+                provider_asn = asn
+            elif public_seen >= MASK_MIN_PUBLIC and (provider_asn is None or asn != provider_asn):
                 break
-        elif addrs and not seen_public:
-            pass                                      # private hops before the provider: the server's own LAN
-        elif seen_public and not addrs:
-            pass                                      # a silent hop inside the provider's stretch
-        elif seen_public:
-            break
+            public_seen += 1
+        elif addrs and public_seen:
+            break                                     # a private hop after the provider's: not the provider
         masked += [a for a in addrs if a not in masked]
         numbers.append(hop.get("hop"))
-        if seen_public and provider_asn is None:
-            break
+    # Silent hops at the end of the masked run belong to whatever follows.
+    while numbers and not any(h.get("addresses") or h.get("address") for h in hops if h.get("hop") == numbers[-1]):
+        numbers.pop()
     for hop in hops:
         if hop.get("hop") in numbers:
             _blank(hop)

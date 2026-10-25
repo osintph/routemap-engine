@@ -107,12 +107,13 @@ jobs:
           echo "ROUTEMAP_PATHS_LAB=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=fd78:9::9" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS6=3" >> "$GITHUB_ENV"
-      - name: The internet (macOS)
+      - name: Loopback (macOS; no live trace from a CI runner)
         if: runner.os == 'macOS'
         run: |
-          echo "ROUTEMAP_PROBE_TARGET=heise.de" >> "$GITHUB_ENV"
-          echo "ROUTEMAP_PROBE_MIN_HOPS=5" >> "$GITHUB_ENV"
-          echo "ROUTEMAP_PATHS_TARGET=heise.de" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_TARGET=127.0.0.1" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_MIN_HOPS=1" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
+          echo "ROUTEMAP_PATHS_TARGET=127.0.0.1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
       - name: Loopback (Windows; the runner's network drops ICMP)
         if: runner.os == 'Windows'

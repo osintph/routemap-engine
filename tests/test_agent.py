@@ -267,9 +267,27 @@ def test_the_providers_first_hops_are_masked_and_the_rest_kept():
     assert route["hops"][6]["address"] == DST
 
 
-def test_an_unknown_provider_as_masks_only_the_first_public_hop():
-    route = _route([_hop(1, "51.68.0.2"), _hop(2, "62.115.1.1"), _hop(3, DST)])
-    assert agent.mask_first_hops(route) == ["51.68.0.2"]
+@pytest.mark.parametrize("asns", [(None, None, None), (16276, 1299, 1299), (16276, 16276, 1299)],
+                         ids=["unknown", "other-as-second", "same-as"])
+def test_never_fewer_than_the_first_two_public_hops_are_masked(asns):
+    hops = [_hop(1, "10.0.0.1")] + [_hop(i + 2, a, asn) for i, (a, asn) in
+                                     enumerate(zip(("51.68.0.2", "62.115.1.1", "62.115.1.9"), asns))]
+    route = _route(hops + [_hop(5, DST, 54113)])
+    masked = agent.mask_first_hops(route)
+    assert masked[:3] == ["10.0.0.1", "51.68.0.2", "62.115.1.1"]
+    assert ("62.115.1.9" in masked) == (asns[2] == asns[0] and asns[0] is not None)
+
+
+def test_the_floor_stops_at_the_target():
+    route = _route([_hop(1, "51.68.0.2", 16276), _hop(2, DST, 54113)])
+    assert agent.mask_first_hops(route) == ["51.68.0.2"] and route["hops"][1]["address"] == DST
+
+
+def test_silent_hops_inside_the_providers_stretch_are_masked_and_trailing_ones_are_not():
+    route = _route([_hop(1, "51.68.0.2", 16276), _hop(2, None), _hop(3, "51.68.0.9", 16276), _hop(4, None),
+                    _hop(5, "62.115.1.1", 1299), _hop(6, DST)])
+    agent.mask_first_hops(route)
+    assert [h["hop"] for h in route["hops"] if h.get("masked")] == [1, 2, 3]
 
 
 def test_the_target_is_never_masked():

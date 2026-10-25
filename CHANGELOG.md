@@ -28,7 +28,9 @@ Keep a Changelog format; this project uses Semantic Versioning.
   8 MB in all and 1 MB per line and checks every field. The agent's place
   can be looked up on the server; its address is never printed.
   `agent.mask_first_hops` hides an agent trace's first hops in the server
-  provider's network (no address, name or place). `python -m routemap_engine`
+  provider's network (no address, name or place): the private hops, then the
+  public hops in the AS of the first public hop, never fewer than the first
+  two public hops, never the target. `python -m routemap_engine`
   works too.
 - `Discovery.to_wire` and `from_wire`: a path discovery measured elsewhere,
   rebuilt with every field checked.
@@ -37,6 +39,9 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - Classifiers for Python 3.11, 3.12 and 3.13.
 
 ### Changed
+
+- **CI traces nothing live.** The macOS probe job now probes loopback, as
+  the Windows job does; it traced heise.de from the runner before.
 
 - **Paths stop after 5 silent hops** (was 3), scamper trace's and RIPE
   Atlas's default.
