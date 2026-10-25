@@ -71,6 +71,41 @@ diff.diff_routes(old_route, new_route)["summary"]
   hours at most; IPv4 only. It probes from the machine it runs on, so it is
   for the desktop app and the CLI, not for a web server.
 
+### Probes and remote agents (0.8.0)
+
+```python
+from routemap_engine import agent, dnstime, multipath, ports, run_trace, TraceOptions
+
+resolved = dnstime.resolve_target("example.com")           # the one address the trace goes to
+rows = dnstime.measure("example.com", ["9.9.9.9"])          # A and AAAA: system resolver, then 9.9.9.9
+run_trace("example.com", TraceOptions(address=resolved.address))   # the tool gets the address, not the name
+ports.check_ports(resolved.address, "443, 80, 22", server_name="example.com")
+multipath.discover("example.com", address=resolved.address)
+```
+
+- **DNS timing** (`dnstime`): time to the first answer for A and AAAA, through
+  the system resolver and the resolvers you name (IP addresses only), with
+  the response code, the AA bit and the TTL where the resolver gives them.
+  2 s per query, 5 s for the whole step.
+- **Port tests** (`ports`): one TCP connection attempt per port, at most 32
+  ports and 4 at a time, open (with connect time), closed (reset) or
+  filtered (no answer); a TLS handshake time for 443 and the ports you mark.
+  A reachability check for one target, not a port scanner: ranges are
+  refused.
+- **Paths** (`multipath`) stop after 5 silent hops (scamper's and RIPE
+  Atlas's default), then ask the target at full TTL on every path, so "not
+  reached" means the target was asked and did not answer. Over TCP (Windows)
+  one ICMP echo per silent hop tells a network that does not answer TCP
+  probes (`tcp_silent_from`) from routers that answer nothing.
+- **Remote agents** (`agent`): `routemap-engine agent 1 hello|trace|paths|ports`
+  runs one measurement on the machine it is started on and prints JSON
+  lines. Route Map runs it on a server over the user's own SSH access, one
+  command per trace; nothing listens on a port and nothing keeps running.
+  Install it on the server with `pip install routemap-engine` (Python 3.11 or
+  later) and check it with `routemap-engine agent 1 hello`. With
+  `--place ip` the server's place is looked up at RIPEstat (which then sees
+  the server's address); only the place is printed, never the address.
+
 ## What is sent where
 
 | Source | Sends | To |
@@ -81,6 +116,10 @@ diff.diff_routes(old_route, new_route)["summary"]
 | `ripe.RipeStat` | public addresses, prefixes, AS numbers | stat.ripe.net |
 | `baseline.Baseline` | two country codes and an anchor name | atlas.ripe.net |
 | `watch.Watch` | ICMP echo probes with rising TTL, one per hop per cycle | the target, and the routers on the way |
+| `dnstime.measure` | the target's name (A and AAAA queries) | the system resolver, and each resolver the caller names |
+| `ports.check_ports` | one TCP connection attempt per port, and a TLS ClientHello with the target's name for TLS ports | the target's address |
+| `multipath.discover` | ICMP echo probes (macOS, Linux) or TCP SYNs to port 443 (Windows) with rising TTL, plus one ICMP echo per hop silent to TCP | the target, and the routers on the way |
+| `agent` with `--place ip` | the server's own address, as for this machine's origin | stat.ripe.net |
 
 Private, CGNAT and reserved addresses are never looked up. Each upstream has its
 own terms: CAIDA's Acceptable Use Agreement for publicly accessible datasets

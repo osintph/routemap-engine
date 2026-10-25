@@ -86,9 +86,11 @@ def test_a_silent_router_does_not_make_paths_of_its_own():
     assert len(d.paths) == 2 and all(p.hops[1] in ("r2", None) for p in d.paths)
 
 
-def test_three_silent_hops_end_discovery():
-    d, lab = run(["r1", "s2", "s3", "s4", "r5", DST], silent={"s2", "s3", "s4"})
-    assert d.stopped_by == "gap" and max(t for _, _, t in lab.sent if t != multipath.PING_HOPS) == 4
+def test_five_silent_hops_end_discovery():
+    """0.8.0: five, scamper trace's and RIPE Atlas's default (three until 0.7.1)."""
+    silent = {"s2", "s3", "s4", "s5", "s6"}
+    d, lab = run(["r1", "s2", "s3", "s4", "s5", "s6", "r7", DST], silent=silent)
+    assert d.stopped_by == "gap" and max(t for _, _, t in lab.sent if t != multipath.PING_HOPS) == 6
 
 
 def _topologies(n):

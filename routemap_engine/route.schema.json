@@ -59,6 +59,19 @@
     "paths": {
       "description": "Path discovery (0.7.0, routemap_engine.multipath): present only for a route made by analyse_paths. Paths found over ICMP are a lower bound (at_least).",
       "$ref": "#/$defs/paths"
+    },
+    "resolved": {
+      "$ref": "#/$defs/resolved"
+    },
+    "dns": {
+      "description": "0.8.0: DNS response timing (routemap_engine.dnstime).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dns_lookup"
+      }
+    },
+    "ports": {
+      "$ref": "#/$defs/ports"
     }
   },
   "$defs": {
@@ -408,6 +421,10 @@
         "ixp": {
           "type": "string",
           "description": "Internet exchange the hop's address belongs to."
+        },
+        "masked": {
+          "type": "boolean",
+          "description": "0.8.0: an agent trace's first hop in the server provider's network, shown without address, name or place."
         }
       }
     },
@@ -495,6 +512,9 @@
             "country"
           ],
           "description": "Present only when the hop is placed to country level: the coordinates are a country centroid, not a city."
+        },
+        "masked": {
+          "type": "boolean"
         }
       }
     },
@@ -550,7 +570,7 @@
               "null"
             ]
           },
-          "maxItems": 30
+          "maxItems": 31
         },
         "rtt_ms": {
           "type": "array",
@@ -560,7 +580,7 @@
               "null"
             ]
           },
-          "maxItems": 30
+          "maxItems": 31
         },
         "reached": {
           "type": "boolean"
@@ -590,7 +610,28 @@
           "items": {
             "$ref": "#/$defs/path_hop"
           },
-          "maxItems": 30
+          "maxItems": 31
+        },
+        "reached_by": {
+          "enum": [
+            "discovery",
+            "full_ttl",
+            null
+          ],
+          "description": "0.8.0: how the target answered: during discovery, or only to the full-TTL attempts after a silent stretch."
+        },
+        "silent": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "0.8.0: first and last TTL of the silent stretch before a full-TTL answer."
         }
       }
     },
@@ -661,7 +702,8 @@
             "cancel",
             "deadline",
             "gap",
-            "max_hops"
+            "max_hops",
+            "local_error"
           ]
         },
         "seconds": {
@@ -684,6 +726,286 @@
         "discovery_probes": {
           "type": "integer",
           "minimum": 0
+        },
+        "stop_text": {
+          "type": "string",
+          "description": "0.8.0: why the discovery ended, in words."
+        },
+        "max_hops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "silent_stop": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "0.8.0: first and last TTL of the silent hops that ended the discovery."
+        },
+        "final_hop": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 31,
+          "description": "0.8.0: the hop number of a full-TTL answer after silent hops (the hop after the last one sent)."
+        },
+        "tcp_silent_from": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "0.8.0, TCP runs: the first TTL of the stretch that ended the discovery, silent to TCP while one ICMP echo there was answered."
+        },
+        "icmp_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ttl",
+              "address"
+            ],
+            "properties": {
+              "ttl": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "resolved": {
+          "$ref": "#/$defs/resolved"
+        },
+        "per_packet": {
+          "type": "array",
+          "description": "0.8.0: each per-packet hop's routers, each placed on its own.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hop",
+              "located"
+            ],
+            "properties": {
+              "hop": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "located": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/path_hop"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "resolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "address",
+        "family"
+      ],
+      "description": "0.8.0: the address the trace was sent to, resolved once, and the name it was resolved from.",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "address": {
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            4,
+            6
+          ]
+        },
+        "by": {
+          "type": "string"
+        }
+      }
+    },
+    "dns_lookup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolver",
+        "type",
+        "ms",
+        "addresses"
+      ],
+      "properties": {
+        "resolver": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "A",
+            "AAAA"
+          ]
+        },
+        "ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rcode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "aa": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cached": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tcp": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ports": {
+      "description": "0.8.0: TCP port tests to the traced address (routemap_engine.ports).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "results"
+      ],
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "cap": {
+          "type": "integer"
+        },
+        "parallel": {
+          "type": "integer"
+        },
+        "wait": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "results": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "port",
+              "state"
+            ],
+            "properties": {
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "state": {
+                "enum": [
+                  "open",
+                  "closed",
+                  "filtered",
+                  "error"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connect_ms": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "tls_ms": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "tls_version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tls_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
         }
       }
     }

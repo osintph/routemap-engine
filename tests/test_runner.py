@@ -54,7 +54,7 @@ def test_a_trace_streams_its_lines_as_they_arrive(fake_tool):
     result = runner.run_trace("heise.de", _opts(
         delay="0.05", on_line=lambda line: seen.append((time.monotonic() - started, line))))
     assert result.returncode == 0 and not result.cancelled
-    assert seen[0][1].startswith("traceroute to heise.de")
+    assert seen[0][1].startswith(f"traceroute to {result.address}")      # 0.8.0: the tool gets the address
     # The first line arrived well before the last: streamed, not buffered.
     assert seen[-1][0] - seen[0][0] > 0.3
     # And what was streamed is what the parser reads.

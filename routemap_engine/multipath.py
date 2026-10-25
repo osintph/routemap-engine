@@ -44,8 +44,23 @@ CAPS (hard; tests/test_multipath.py checks them on generated topologies)
   ("-p pps ... By default, this value is 20", scamper(1)).
 * :data:`MAX_PROBES` per discovery, path pings included: 1,500.
 * :data:`MAX_FLOWS`: 64, enough for n_7 = 60, so up to 8 next hops at one hop.
-* :data:`GAP_LIMIT` silent hops end the discovery: 3 (scamper tracelb's
-  default gap limit).
+* :data:`GAP_LIMIT` silent hops end the discovery: 5, the default of both
+  scamper's trace ("By default, a gap limit of 5 hops is used", scamper(1))
+  and RIPE Atlas's traceroute (``gaplimit= 5;`` in eperd/traceroute.c of
+  ripe-atlas-software-probe). Until 0.8.0 it was 3, tracelb's default.
+* **Then the target is asked anyway.** Every path, reached or not, gets its
+  :data:`PATH_PINGS` attempts at the full hop limit, as RIPE Atlas sends a
+  last-ditch probe with TTL 255 once its gap limit is reached
+  (``state->lastditch= 1; state->hop= 255;``, same file) and scamper's gap
+  action 2 does ("send last-ditch probes", scamper(1)). A path whose target
+  answers only those is reached at :attr:`Discovery.final_hop`, the hop after
+  the last one sent, with its silent stretch marked; "not reached" means the
+  target was asked and did not answer.
+* **TCP-silent networks (Windows).** Over TCP, each hop where no probe was
+  answered gets one ICMP echo at the same TTL (the caller's ``icmp_check``),
+  counted in the budget and the rate. When the silent stretch that ended the
+  discovery answers ICMP, :attr:`Discovery.tcp_silent_from` says where: the
+  routers there do not answer TCP probes, and a trace over ICMP can map on.
 * One probe in flight per (TTL, flow), :data:`MAX_HOPS` hops, :data:`WAIT`
   seconds per probe.
 
@@ -71,7 +86,7 @@ log = logging.getLogger("routemap_engine.multipath")
 MAX_RATE = 20.0
 MAX_PROBES = 1500
 MAX_FLOWS = 64
-GAP_LIMIT = 3
+GAP_LIMIT = 5
 MAX_HOPS = 30
 WAIT = 1.0
 PATH_PINGS = 10
@@ -81,8 +96,18 @@ PING_HOPS = 64
 # Veitch et al. 2009, Table I: flows needed after k responders, k = 1, 2, ...
 N_K = (9, 17, 24, 33, 42, 51, 60, 70, 81, 91, 102, 113, 125, 136, 148, 161)
 METHOD = "icmp-paris"
+PROBER_MARK = "routemap-engine built-in prober"          # parse._ICMP_MARK reads it
 METHODS = ("icmp-paris", "tcp-paris")
 LETTERS = "ABCDEFGHIJKLMNOP"
+ANNOT_FINAL_PROBE = "answered the final full-TTL probe"
+FINAL_PROBE_DETAIL = ("after the silent hops that ended the discovery, the target was asked at the full hop "
+                      "limit and answered; it is numbered after the last hop sent, and the hops in between "
+                      "are unknown")
+# The probe each method sends, for the trace text's header.
+METHOD_MARKS = {"icmp-paris": "ICMP echo", "tcp-paris": "TCP SYN to port {port}"}
+STOP_TEXT = {"complete": "complete", "budget": "stopped at the probe cap", "cancel": "stopped by the user",
+             "deadline": "stopped at the time limit", "max_hops": "stopped at the hop limit",
+             "local_error": "stopped: this computer refused to send probes"}
 
 
 class Transport(Protocol):
@@ -134,6 +159,8 @@ class Path:
     pings_sent: int = 0
     pings_lost: int = 0
     rtt_to_target_ms: float | None = None
+    reached_by: str | None = None           # "discovery", "full_ttl" (only the final attempts answered) or None
+    silent: list[int] | None = None         # [first, last] TTL of the silent stretch before a full-TTL answer
 
     @property
     def loss_pct(self) -> float | None:
@@ -144,7 +171,8 @@ class Path:
                 "rtt_ms": [None if r is None else round(r, 3) for r in self.rtt_ms],
                 "reached": self.reached, "sent": self.pings_sent, "lost": self.pings_lost,
                 "loss_pct": self.loss_pct,
-                "rtt_to_target_ms": None if self.rtt_to_target_ms is None else round(self.rtt_to_target_ms, 3)}
+                "rtt_to_target_ms": None if self.rtt_to_target_ms is None else round(self.rtt_to_target_ms, 3),
+                "reached_by": self.reached_by, "silent": None if self.silent is None else list(self.silent)}
 
 
 @dataclass
@@ -166,6 +194,19 @@ class Discovery:
     discovery_probes: int = 0             # probes sent before the target attempts
     seconds: float = 0.0
     method: str = METHOD
+    max_hops: int = MAX_HOPS
+    silent_stop: list[int] | None = None  # [first, last] TTL of the silent hops that ended it (stopped_by "gap")
+    final_hop: int | None = None          # where a full-TTL answer after silent hops is numbered
+    icmp_checks: dict[int, str | None] = field(default_factory=dict)   # TTL -> ICMP check answer (TCP runs)
+    tcp_silent_from: int | None = None    # first TTL of a stretch silent to TCP whose ICMP check answered
+
+    @property
+    def stop_text(self) -> str:
+        """Why the discovery ended, in words: "stopped after 5 silent hops (3 to 7)"."""
+        if self.stopped_by == "gap" and self.silent_stop:
+            a, b = self.silent_stop
+            return f"stopped after {b - a + 1} silent hops ({a} to {b})"
+        return STOP_TEXT.get(self.stopped_by, self.stopped_by)
 
     def to_dict(self) -> dict:
         return {"method": self.method, **({"port": probe.TCP_FLOW_PORT} if self.method == "tcp-paris" else {}),
@@ -174,14 +215,108 @@ class Discovery:
                 "probes_sent": self.probes_sent, "flows": self.flows_used, "paths_capped": self.paths_capped,
                 "local_failures": self.local_failures, "budget": self.budget,
                 "discovery_probes": self.discovery_probes,
-                "stopped_by": self.stopped_by, "seconds": round(self.seconds, 1)}
+                "stopped_by": self.stopped_by, "stop_text": self.stop_text, "seconds": round(self.seconds, 1),
+                "max_hops": self.max_hops, "silent_stop": None if self.silent_stop is None else list(self.silent_stop),
+                "final_hop": self.final_hop, "tcp_silent_from": self.tcp_silent_from,
+                "icmp_checks": [{"ttl": t, "address": a} for t, a in sorted(self.icmp_checks.items())],
+                "resolved": {"name": self.target, "address": self.address, "family": self.af}}
+
+    def to_wire(self) -> dict:
+        """Everything :func:`routemap_engine.analyse_paths` reads, as JSON: a
+        discovery measured on a remote agent travels in this shape and is
+        rebuilt with :meth:`from_wire`."""
+        out = self.to_dict()
+        out.update(target=self.target, address=self.address,
+                   responders=[{"ttl": t, "addresses": list(a)} for t, a in sorted(self.responders.items())],
+                   rtts=[{"ttl": t, "address": a, "ms": [round(x, 3) for x in v if x is not None]}
+                         for (t, a), v in sorted(self.rtts.items())],
+                   silent=[{"ttl": t, "count": n} for t, n in sorted(self.silent.items())])
+        return out
+
+    @classmethod
+    def from_wire(cls, data: dict) -> "Discovery":
+        """Rebuild a discovery from :meth:`to_wire`, checking every field: the
+        data came from another machine. Raises ValueError on anything else."""
+        import ipaddress
+
+        def addr(v, none_ok=False):
+            if v is None and none_ok:
+                return None
+            if not isinstance(v, str) or len(v) > 45:
+                raise ValueError("bad address")
+            return str(ipaddress.ip_address(v))
+
+        def ttl(v, top=PING_HOPS):
+            if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= top:
+                raise ValueError("bad TTL")
+            return v
+
+        def num(v):
+            if v is None:
+                return None
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 <= v < 1e7:
+                raise ValueError("bad number")
+            return float(v)
+
+        if not isinstance(data, dict):
+            raise ValueError("not a discovery")
+        from routemap_engine.target import validate_target
+        address = addr(data.get("address"))
+        d = cls(validate_target(str(data.get("target") or address)), address, probe.family_of(address))
+        method = data.get("method")
+        if method not in METHODS:
+            raise ValueError("bad method")
+        d.method = method
+        for item in data.get("responders") or []:
+            d.responders[ttl(item["ttl"])] = [addr(a) for a in item["addresses"]][:MAX_FLOWS]
+        for item in data.get("rtts") or []:
+            d.rtts[(ttl(item["ttl"]), addr(item["address"]))] = [num(x) for x in item["ms"]][:MAX_PROBES]
+        for item in data.get("silent") or []:
+            d.silent[ttl(item["ttl"])] = int(num(item["count"]) or 0)
+        paths = data.get("paths") or []
+        if not isinstance(paths, list) or len(paths) > MAX_PATHS:
+            raise ValueError("bad paths")
+        for i, pd in enumerate(paths):
+            hops = [addr(a, True) for a in pd["hops"]][:MAX_HOPS + 1]
+            rtts = [num(r) for r in pd["rtt_ms"]][:MAX_HOPS + 1]
+            reached_by = pd.get("reached_by")
+            if reached_by not in ("discovery", "full_ttl", None):
+                raise ValueError("bad reached_by")
+            silent = pd.get("silent")
+            d.paths.append(Path(LETTERS[i], [int(num(f)) for f in pd["flows"]][:MAX_FLOWS], hops, rtts,
+                                reached=bool(pd["reached"]), pings_sent=int(num(pd.get("sent")) or 0),
+                                pings_lost=int(num(pd.get("lost")) or 0),
+                                rtt_to_target_ms=num(pd.get("rtt_to_target_ms")), reached_by=reached_by,
+                                silent=[ttl(silent[0]), ttl(silent[1])] if silent else None))
+        d.per_packet_hops = [ttl(t) for t in data.get("per_packet_hops") or []]
+        for key in ("probes_sent", "flows", "local_failures", "budget", "discovery_probes"):
+            value = int(num(data.get(key)) or 0)
+            setattr(d, "flows_used" if key == "flows" else key, value)
+        d.paths_capped = bool(data.get("paths_capped"))
+        stopped = data.get("stopped_by")
+        if stopped not in ("complete", "budget", "cancel", "deadline", "gap", "max_hops", "local_error"):
+            raise ValueError("bad stopped_by")
+        d.stopped_by = stopped
+        d.seconds = num(data.get("seconds")) or 0.0
+        d.max_hops = ttl(data.get("max_hops") or MAX_HOPS, MAX_HOPS)
+        stop = data.get("silent_stop")
+        d.silent_stop = [ttl(stop[0]), ttl(stop[1])] if stop else None
+        d.final_hop = None if data.get("final_hop") is None else ttl(data["final_hop"], MAX_HOPS + 1)
+        d.tcp_silent_from = None if data.get("tcp_silent_from") is None else ttl(data["tcp_silent_from"])
+        d.icmp_checks = {ttl(c["ttl"]): addr(c["address"], True) for c in data.get("icmp_checks") or []}
+        return d
 
     def trace_text(self) -> str:
         """BSD traceroute -n text with every responder of every hop, for the
         parser and the usual analysis (placement, AS path, annotations)."""
         last = max(self.responders) if self.responders else 0
-        lines = [f"traceroute to {self.target} ({self.address}), {last} hops max, "
-                 f"{8 + len(probe.PAYLOAD)} byte packets, {probe.HEADER_MARK}, paths"]
+        # The probe actually sent and the configured hop limit, never the last
+        # hop that answered (0.7.1 printed "ICMP echo" and "2 hops max" for a
+        # TCP run that stopped on silence), and why the discovery ended.
+        mark = METHOD_MARKS.get(self.method, self.method).format(port=probe.TCP_FLOW_PORT)
+        size = f"{8 + len(probe.PAYLOAD)} byte packets, " if self.method == "icmp-paris" else ""
+        lines = [f"traceroute to {self.target} ({self.address}), {self.max_hops} hops max, {size}{mark}, "
+                 f"{PROBER_MARK}, paths, {self.stop_text}"]
         for ttl in range(1, last + 1):
             replies = [probe.Reply(a, _median(self.rtts.get((ttl, a), []))) for a in self.responders.get(ttl, [])]
             if self.silent.get(ttl) or not replies:
@@ -254,8 +389,13 @@ class Discoverer:
     def __init__(self, target: str, address: str, transport: Transport, *,
                  options: Options | None = None, clock: Callable[[], float] = time.perf_counter,
                  cancel: threading.Event | None = None, deadline: float | None = None,
-                 on_progress: Callable[[dict], None] | None = None):
+                 on_progress: Callable[[dict], None] | None = None,
+                 icmp_check: Callable[[int], str | None] | None = None):
+        """*icmp_check(ttl)* sends one ICMP echo to the target with that TTL
+        and returns the address that answered, or None: given for TCP runs, so
+        a stretch silent to TCP can be told from routers that answer nothing."""
         self.target, self.address = target, address
+        self.icmp_check = icmp_check
         self.t = transport
         self.o = (options or Options()).clamped()
         self.clock = clock
@@ -263,7 +403,8 @@ class Discoverer:
         self.deadline = deadline
         self.on_progress = on_progress
         self.d = Discovery(target, address, probe.family_of(address),
-                           method=getattr(transport, "METHOD", METHOD), budget=self.o.budget)
+                           method=getattr(transport, "METHOD", METHOD), budget=self.o.budget,
+                           max_hops=self.o.max_hops)
         self._seq = secrets.randbelow(0x10000)
         self._last_send: float | None = None
         self._pending: dict[int, tuple[int, int, float]] = {}       # seq -> (flow, ttl, sent at)
@@ -461,6 +602,24 @@ class Discoverer:
             return
         self._probe_items([(f, t) for t in range(1, upto) for f in flows])
 
+    def _check_icmp(self, ttl: int):
+        """One ICMP echo at *ttl* for a hop silent to every TCP probe, inside
+        the budget (the pings' share excepted) and the rate cap."""
+        if self.icmp_check is None or ttl in self.d.icmp_checks or self._stopping():
+            return
+        if self.d.probes_sent >= self.o.budget - self._ping_reserve:
+            return
+        spacing = 1.0 / self.o.rate + 1e-4
+        if self._last_send is not None:
+            while (left := self._last_send + spacing - self.clock()) > 0:
+                self.t.read(left)             # nothing is pending between hops; this only waits
+        self._last_send = self.clock()
+        self.d.probes_sent += 1
+        try:
+            self.d.icmp_checks[ttl] = self.icmp_check(ttl)
+        except Exception:  # noqa: BLE001 - a failed check is no answer, never a failed run
+            self.d.icmp_checks[ttl] = None
+
     # ---------------------------------------------------------------- run
     def run(self) -> Discovery:
         d = self.d
@@ -505,6 +664,8 @@ class Discoverer:
                 alive = [f for f in range(m) if self._alive(f, ttl + 1)]
                 silent = not any((self._result.get((f, ttl)) or (None,))[0] for f in range(m))
                 gap = gap + 1 if silent else 0
+                if silent:
+                    self._check_icmp(ttl)
                 if self._stop:
                     break
                 if not alive:
@@ -512,6 +673,7 @@ class Discoverer:
                     break
                 if gap >= GAP_LIMIT:
                     d.stopped_by = "gap"
+                    d.silent_stop = [ttl - gap + 1, ttl]
                     break
             else:
                 d.stopped_by = "max_hops"
@@ -524,8 +686,10 @@ class Discoverer:
                 budget_hit = self._stop == "budget"
                 self._stop, self._pinging = None, True
                 self._ping_paths()
+                self._final_answers()
                 if budget_hit and self._stop is None:
                     self._stop = "budget"
+            self._tcp_silence()
         finally:
             self.t.close()
         if self._stop:
@@ -644,14 +808,16 @@ class Discoverer:
                                 reached=any(f in self._reached_at for f in flows)))
 
     def _ping_paths(self):
-        """Each reached path pinged :data:`PATH_PINGS` times, one round across
-        all paths at a time and each round on the path's next flow, so no flow
-        is probed back to back (a TCP target ignores a quick repeat from the
-        same port) and the waits overlap."""
+        """Every path pinged :data:`PATH_PINGS` times at the full hop limit,
+        reached or not (a path that never reached the target is asked too, so
+        "not reached" is an answer), one round across all paths at a time and
+        each round on the path's next flow, so no flow is probed back to back
+        (a TCP target ignores a quick repeat from the same port) and the waits
+        overlap."""
         d = self.d
         if not self.o.pings:
             return
-        reached = [p for p in d.paths if p.reached]
+        reached = list(d.paths)
         rtts: dict[str, list[float]] = {p.id: [] for p in reached}
         for r in range(self.o.pings):
             if self._stopping():
@@ -667,6 +833,40 @@ class Discoverer:
                     path.pings_lost += 1
         for p in reached:
             p.rtt_to_target_ms = _median(rtts[p.id])
+            if p.reached:
+                p.reached_by = "discovery"
+            elif p.pings_sent > p.pings_lost:
+                p.reached, p.reached_by = True, "full_ttl"
+
+    def _final_answers(self):
+        """Paths reached only by the full-TTL attempts: the target is numbered
+        :attr:`Discovery.final_hop`, the hop after the last one sent (as RIPE
+        Atlas numbers the answer to its TTL 255 probe), each path's silent
+        stretch is marked, and the main hop list shows the target there."""
+        d = self.d
+        late = [p for p in d.paths if p.reached_by == "full_ttl"]
+        if not late:
+            return
+        sent = max((t for (_f, t) in self._result if t != PING_HOPS), default=0)
+        d.final_hop = min(sent, MAX_HOPS) + 1
+        for p in late:
+            last = max((i + 1 for i, a in enumerate(p.hops) if a is not None), default=0)
+            p.hops = p.hops[:last] + [None] * (d.final_hop - 1 - last) + [self.address]
+            p.rtt_ms = p.rtt_ms[:last] + [None] * (d.final_hop - 1 - last) + [p.rtt_to_target_ms]
+            p.silent = [last + 1, d.final_hop - 1] if d.final_hop - 1 > last else None
+        seen = d.responders.setdefault(d.final_hop, [])
+        if self.address not in seen:
+            seen.append(self.address)
+        d.rtts.setdefault((d.final_hop, self.address), []).extend(
+            p.rtt_to_target_ms for p in late if p.rtt_to_target_ms is not None)
+
+    def _tcp_silence(self):
+        """Where routers stopped answering TCP but answered the ICMP check:
+        the first TTL of the silent stretch that ended the discovery, when the
+        ICMP check there was answered."""
+        d = self.d
+        if d.silent_stop and d.icmp_checks.get(d.silent_stop[0]):
+            d.tcp_silent_from = d.silent_stop[0]
 
 
 def available() -> tuple[bool, str]:
@@ -676,15 +876,33 @@ def available() -> tuple[bool, str]:
 
 def discover(target: str, *, family: str = "auto", options: Options | None = None,
              cancel: threading.Event | None = None, deadline: float | None = None,
-             on_progress: Callable[[dict], None] | None = None) -> Discovery:
+             on_progress: Callable[[dict], None] | None = None, address: str | None = None) -> Discovery:
     """Discover the paths to *target* (a validated hostname or address) with
-    the built-in Paris prober. Blocking: run it in a worker thread."""
+    the built-in Paris prober. Blocking: run it in a worker thread. *address*
+    is the target's address when the caller has resolved it already (the
+    address it shows, :func:`routemap_engine.dnstime.resolve_target`); otherwise
+    it is resolved here, once."""
     ok, why = available()
     if not ok:
         raise RuntimeError(why)
-    address = probe.resolve(target, family)
+    address = address or probe.resolve(target, family)
     probe.check_route(address)
-    transport = (probe.TcpFlowTransport(address) if probe.flow_method() == probe.TcpFlowTransport.METHOD
-                 else probe.FlowTransport(address))
+    tcp = probe.flow_method() == probe.TcpFlowTransport.METHOD
+    transport = probe.TcpFlowTransport(address) if tcp else probe.FlowTransport(address)
     return Discoverer(target, address, transport, options=options, cancel=cancel,
-                      deadline=deadline, on_progress=on_progress).run()
+                      deadline=deadline, on_progress=on_progress,
+                      icmp_check=icmp_checker(address) if tcp else None).run()
+
+
+def icmp_checker(address: str, wait: float = WAIT) -> Callable[[int], str | None] | None:
+    """One ICMP echo to *address* at a given TTL with the built-in prober
+    (Windows' ICMP function, no administrator rights), or None where the
+    prober cannot run for that family."""
+    if not probe.available(probe.family_of(address))[0]:
+        return None
+    seq = [secrets.randbelow(0x10000)]
+
+    def check(ttl: int) -> str | None:
+        seq[0] = (seq[0] + 1) & 0xFFFF
+        return probe._probe(address, ttl, seq[0], wait).address
+    return check
