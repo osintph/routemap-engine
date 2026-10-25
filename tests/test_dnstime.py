@@ -89,9 +89,15 @@ def test_the_system_resolver_is_timed_for_a_and_aaaa_and_says_nothing_it_cannot_
     assert all(r.aa is None and r.cached is None and r.rcode is None for r in rows)
 
 
-def test_a_missing_family_is_a_row_with_its_reason():
-    rows = dnstime.measure("v4only.example", getaddrinfo=_gai({socket.AF_INET: ["192.0.2.1"]}))
-    assert rows[1].type == "AAAA" and rows[1].ms is None and rows[1].error == "no AAAA record"
+def test_an_empty_family_says_what_the_system_returned_not_that_the_record_is_missing():
+    """ODIN, 25 Oct 2026: "no AAAA record" for bbc.com and heise.de, which have
+    AAAA records; Windows gives a computer without IPv6 no IPv6 address."""
+    rows = dnstime.measure("bbc.com", getaddrinfo=_gai({socket.AF_INET: ["151.101.64.81"]}))
+    assert rows[1].type == "AAAA" and rows[1].ms is None
+    assert rows[1].error == "system resolver returned no IPv6 address (this computer may have no IPv6)"
+    rows = dnstime.measure("v6only.example", getaddrinfo=_gai({socket.AF_INET6: ["2001:db8::1"]}))
+    assert rows[0].error == "system resolver returned no IPv4 address"
+    assert not any("record" in (r.error or "") for r in rows)
 
 
 def test_a_named_resolver_reports_rcode_ttl_and_addresses(server):

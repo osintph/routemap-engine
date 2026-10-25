@@ -16,10 +16,13 @@ STATES (Nmap's definitions, Nmap Reference Guide, "Port Scanning Basics")
 * **filtered**: "packet filtering prevents its probes from reaching the
   port": no answer within the wait, or an ICMP unreachable (reason says which).
 
-One attempt per port: on Windows exactly one SYN (SIO_TCP_INITIAL_RTO, as the
-Paths prober), and a router's ICMP error fails the attempt at once
-(TCP_FAIL_CONNECT_ON_ICMP_ERROR); macOS and Linux may resend the SYN inside
-the wait, as their connect does.
+One connection attempt per port, with the wait it was given on every
+platform: the system may resend its SYN inside the wait, as its connect does.
+On Windows a router's ICMP error fails the attempt at once
+(TCP_FAIL_CONNECT_ON_ICMP_ERROR). Windows' own time-out (WSAETIMEDOUT, 10060)
+is "filtered" too; when the system gave up before the wait, the reason says
+after how long. (0.8.0.dev1 sent exactly one SYN on Windows, and Windows then
+gave up after its initial RTO, about 1 s, of a 3 s wait: ODIN, 25 Oct 2026.)
 
 TLS: for 443 and the ports the caller marks, a TLS handshake right after the
 connection, server name set to the target's name, timed from ClientHello to
@@ -53,6 +56,7 @@ MAX_WAIT = 10.0
 
 _REFUSED = {errno.ECONNREFUSED, 10061}                                   # WSAECONNREFUSED
 _UNREACHABLE = {errno.EHOSTUNREACH, errno.ENETUNREACH, 10065, 10051}     # WSAEHOSTUNREACH, WSAENETUNREACH
+_TIMED_OUT = {errno.ETIMEDOUT, 10060}                                      # WSAETIMEDOUT
 _IN_PROGRESS = {0, errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EAGAIN, 10035}
 
 
@@ -119,18 +123,20 @@ class PortsResult:
 
 
 def _windows_options(sock) -> None:
+    """A router's ICMP error fails the attempt at once. SYN retransmissions
+    stay on, so the attempt lasts the wait it was given."""
     from routemap_engine import probe
     try:
         sock.setsockopt(socket.IPPROTO_TCP, probe.TCP_FAIL_CONNECT_ON_ICMP_ERROR, 1)
     except OSError:
         pass
-    probe.no_syn_retransmissions(sock)
 
 
 def _one(address: str, port: int, wait: float, tls: bool, server_name: str | None,
          windows: bool, clock) -> PortResult:
     family = socket.AF_INET6 if ":" in address else socket.AF_INET
     sock = socket.socket(family, socket.SOCK_STREAM)
+    started = clock()
     try:
         if windows:
             _windows_options(sock)
@@ -138,20 +144,20 @@ def _one(address: str, port: int, wait: float, tls: bool, server_name: str | Non
         started = clock()
         rc = sock.connect_ex((address, port))
         if rc not in _IN_PROGRESS:
-            return _failed(port, rc)
+            return _failed(port, rc, clock() - started, wait)
         if rc != 0:
             _, writable, failed = select.select([], [sock], [sock], wait)
             if not writable and not failed:
                 return PortResult(port, "filtered", f"no answer in {wait:g} s")
             rc = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
             if rc != 0:
-                return _failed(port, rc)
+                return _failed(port, rc, clock() - started, wait)
         result = PortResult(port, "open", connect_ms=(clock() - started) * 1000)
         if tls:
             _tls(sock, result, wait, server_name, clock)
         return result
     except OSError as exc:
-        return _failed(port, exc.errno or -1)
+        return _failed(port, exc.errno or -1, clock() - started, wait)
     finally:
         try:
             sock.close()
@@ -159,11 +165,15 @@ def _one(address: str, port: int, wait: float, tls: bool, server_name: str | Non
             pass
 
 
-def _failed(port: int, rc: int) -> PortResult:
+def _failed(port: int, rc: int, elapsed: float | None = None, wait: float | None = None) -> PortResult:
     if rc in _REFUSED:
         return PortResult(port, "closed", "reset")
     if rc in _UNREACHABLE:
         return PortResult(port, "filtered", "unreachable")
+    if rc in _TIMED_OUT:
+        if elapsed is not None and wait is not None and elapsed < wait - 0.25:
+            return PortResult(port, "filtered", f"no answer (the system gave up after {elapsed:.1f} s)")
+        return PortResult(port, "filtered", f"no answer in {wait:g} s" if wait else "no answer")
     return PortResult(port, "error", f"connection failed (error {rc})")
 
 

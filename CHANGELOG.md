@@ -71,6 +71,19 @@ Keep a Changelog format; this project uses Semantic Versioning.
   hop where no TCP probe was answered, within the budget and the rate; when
   the stretch that ended the discovery answers ICMP, `tcp_silent_from` says
   from which hop (bbc.com over Converge, 0.4.0-beta.2).
+- **A target that answers ICMP for itself is not blamed on the routers.**
+  `tcp_silent_by` says who answered the ICMP check where TCP went silent:
+  "router" (the network does not answer TCP probes) or "target" (the target
+  answered ICMP there and its TCP service only at full TTL; something in
+  front of it, a firewall or load balancer, is the likely reading). ODIN,
+  heise.de: TCP silent at 15 to 19, every ICMP check answered by the target.
+- **Port tests on Windows**: Windows' own time-out (WSAETIMEDOUT, 10060) is
+  "filtered", not "error", and SYN retransmissions stay on so the attempt
+  lasts its wait (it gave up after about 1 s of 3). When the system gives up
+  early the reason says after how long.
+- **An empty system AAAA row no longer claims the record is missing**:
+  "system resolver returned no IPv6 address (this computer may have no
+  IPv6)", and likewise for IPv4.
 - **Routers at a per-packet hop keep their place.** They are on no path row
   and their hop's main row has several routers, so nothing placed them
   (62.115.132.229 at hop 11 of the 12 Oct ODIN run, placed in Frankfurt by
