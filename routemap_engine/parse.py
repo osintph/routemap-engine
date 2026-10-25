@@ -84,6 +84,11 @@ class Hop:
     # traceroute's ICMP unreachable codes (!H host, !N network, !X admin, ...),
     # kept verbatim because they are the router's own words about why it stopped.
     codes: list[str] = field(default_factory=list)
+    # A hostname and the address it was printed with ("name (addr)") or that
+    # reverse DNS gave it: at a hop several routers answered, the hostname
+    # that places the hop says which of them it is (ODIN, 26 Oct 2026: hop
+    # 11's row named ffm-b16-link next to another router's address).
+    named: dict[str, str] = field(default_factory=dict)
 
     @property
     def min_rtt_ms(self) -> float | None:
@@ -127,6 +132,18 @@ class Hop:
         if _looks_like_address(name):
             return
         self.hostnames.append(name)
+
+    def add_named(self, name: str, addr: str) -> None:
+        """A hostname with the address it belongs to."""
+        self.add_hostname(name)
+        self.add_address(addr)
+        name, addr = name.strip().strip("."), addr.strip().strip("[]()")
+        try:
+            addr = str(ipaddress.ip_address(addr))
+        except ValueError:
+            return
+        if name in self.hostnames and addr in self.addresses:
+            self.named.setdefault(name, addr)
 
 
 @dataclass
@@ -203,6 +220,8 @@ def _dedupe_hops(hops: list[Hop]) -> list[Hop]:
                 target.add_address(addr)
             for name in hop.hostnames:
                 target.add_hostname(name)
+            for name, addr in hop.named.items():
+                target.named.setdefault(name, addr)
             target.rtts_ms.extend(hop.rtts_ms)
             target.sent += hop.sent
             target.lost += hop.lost
@@ -285,8 +304,7 @@ def _parse_tracert(lines: list[str]) -> tuple[list[Hop], int, str | None, bool]:
         if rest and not _TRACERT_DEAD.match(rest):
             named = re.match(r"^(\S+)\s*\[([^\]]+)\]\s*$", rest)
             if named:
-                hop.add_hostname(named.group(1))
-                hop.add_address(named.group(2))
+                hop.add_named(named.group(1), named.group(2))
             else:
                 for token in rest.split():
                     if _looks_like_address(token):
@@ -353,8 +371,7 @@ def _traceroute_body_into(hop: Hop, body: str) -> bool:
             hop.sent += 1
             hop.lost += 1
         elif kind == "named":
-            hop.add_hostname(match.group("host"))
-            hop.add_address(match.group("ip"))
+            hop.add_named(match.group("host"), match.group("ip"))
         elif kind == "bare":
             if _looks_like_address(match.group("bare")):
                 hop.add_address(match.group("bare"))
@@ -439,8 +456,7 @@ def _mtr_host_into(hop: Hop, host_part: str) -> None:
         return
     named = re.match(r"^(\S+)\s+\(([^)]+)\)$", host_part)
     if named:
-        hop.add_hostname(named.group(1))
-        hop.add_address(named.group(2))
+        hop.add_named(named.group(1), named.group(2))
     elif _looks_like_address(host_part):
         hop.add_address(host_part)
     else:
@@ -486,8 +502,7 @@ def _parse_mtr(lines: list[str]) -> tuple[list[Hop], int, str | None, bool]:
         cont = _MTR_CONT.match(raw)
         if cont and current is not None:
             if cont.group(2):
-                current.add_hostname(cont.group(1))
-                current.add_address(cont.group(2))
+                current.add_named(cont.group(1), cont.group(2))
             else:
                 _mtr_host_into(current, cont.group(1))
             continue

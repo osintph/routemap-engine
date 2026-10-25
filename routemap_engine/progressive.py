@@ -78,6 +78,10 @@ class ProgressiveTrace:
             ip_db_budget=sources.ip_db_budget, ptr_budget=sources.ptr_budget)
         self.on_hop = on_hop
         self.progress = progress
+        # The address traced, when the caller knows it (mtr prints none): the
+        # final pass places a destination that answered too fast for its
+        # registered place as anycast. By default the banner's address.
+        self.destination: str | None = None
         self.text = ""
         self.parsed = None
         self.placed: dict[int, dict] = {}       # hop number -> located entry
@@ -104,7 +108,8 @@ class ProgressiveTrace:
     async def place(self, hop: Hop) -> dict:
         """Locate one hop now, with the full source order and the RTT bound."""
         single = Hop(hop=hop.hop, addresses=list(hop.addresses), hostnames=list(hop.hostnames),
-                     rtts_ms=list(hop.rtts_ms), sent=hop.sent, lost=hop.lost, codes=list(hop.codes))
+                     rtts_ms=list(hop.rtts_ms), sent=hop.sent, lost=hop.lost, codes=list(hop.codes),
+                     named=dict(hop.named))
         signature = _signature(hop)
         result = await geo.resolve([single], self.origin, self.sources, self.progress)
         entry = result["hops"][0]
@@ -148,7 +153,8 @@ class ProgressiveTrace:
             entry.pop("annotation_details", None)
         # The same two passes as geo.resolve, so a live trace ends where the
         # one-shot analysis of its text ends.
-        geo.annotate(geo.neighbour_check(located))
+        geo.place_anycast(geo.annotate(geo.neighbour_check(located)), self.origin,
+                          self.destination or geo.destination_of(self.parsed.target))
         return Route(parser=self.parsed.parser,
                      parser_label=PARSER_LABELS.get(self.parsed.parser, self.parsed.parser),
                      target=self.parsed.target, warnings=list(self.parsed.warnings),

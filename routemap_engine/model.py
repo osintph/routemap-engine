@@ -167,13 +167,17 @@ def _parsed(trace) -> ParsedTrace:
 async def analyse(trace, origin: tuple[float, float] | None = None, *,
                   sources: geo.Sources | None = None,
                   progress: geo.ProgressFn | None = None,
-                  origin_slack_km: float = geo.SLACK_KM) -> Route:
+                  origin_slack_km: float = geo.SLACK_KM,
+                  destination: str | None = None) -> Route:
     """Parse (if needed), locate and annotate one trace.
 
     *trace* is traceroute/tracert/mtr text, a :class:`ParsedTrace`, or a list
     of :class:`Hop`. *origin* is ``(lat, lon)`` or None. *sources* defaults to
     the live network sources; pass ``geo.OFFLINE`` to contact nothing.
-    *progress* is told when each source starts and finishes.
+    *progress* is told when each source starts and finishes. *destination* is
+    the address traced (by default the one the banner names; mtr prints
+    none), so a destination that answered too fast for its registered place
+    is placed as anycast (:func:`geo.place_anycast`).
 
     Raises :class:`TraceParseError` for text that is not a trace and for a
     trace with no hops, and ValueError for an origin outside the globe.
@@ -190,8 +194,8 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
 
     resolved = await geo.resolve(parsed.hops, origin, sources=sources, progress=progress,
                                  slack_km=origin_slack_km)
-    located = resolved["hops"]
-    one_place_per_address(located, [])
+    located = geo.place_anycast(resolved["hops"], origin, destination or geo.destination_of(parsed.target))
+    one_place_per_address(located, [], _named(parsed.hops))
     return Route(
         parser=parsed.parser,
         parser_label=PARSER_LABELS.get(parsed.parser, parsed.parser),
@@ -213,21 +217,26 @@ _REQUIRED_PATH_FIELDS = tuple(k for k in PATH_HOP_FIELDS if k not in ("ip_provid
 _PLACE_KEYS = ("lat", "lon", "place", "cc", "source", "ip_provider", "precision")
 
 
-def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
+def one_place_per_address(main: list[dict], paths: list[list[dict]], named: dict[str, str] | None = None) -> None:
     """One address, one placement in a run. The same router answers at
     several hops and on several paths, each judged with its own RTT and
     neighbours; a placement any of them rules out (the round trip, or a
     detour its neighbours exclude) is ruled out for all, and otherwise every
-    row shows the same place. Edits the rows in place."""
+    row shows the same place. *named* maps an address to the hostname it was
+    printed or resolved with. Edits the rows in place."""
+    named = named or {}
     rows: dict[str, list[dict]] = {}
     sources: dict[str, list[dict]] = {}
     # A path's rows come first, and a main row only counts as evidence when
-    # one router answered its hop: with several, its hostname can be another
-    # router's (the first name found at the hop), and so its placement too.
+    # one router answered its hop, or when the name that placed it is known
+    # to be its address's own: otherwise, with several routers, its hostname
+    # can be another router's (the first name found at the hop), and so its
+    # placement too.
     for entry in [h for path in paths for h in path] + main:
         if entry.get("address"):
             rows.setdefault(entry["address"], []).append(entry)
-            if len(entry.get("addresses") or [entry["address"]]) == 1:
+            if len(entry.get("addresses") or [entry["address"]]) == 1 or \
+                    (entry.get("hostname") and named.get(entry["address"]) == entry["hostname"]):
                 sources.setdefault(entry["address"], []).append(entry)
     for addr, entries in rows.items():
         evidence = sources.get(addr) or []
@@ -256,7 +265,7 @@ def one_place_per_address(main: list[dict], paths: list[list[dict]]) -> None:
             continue
         for e in entries:
             if len(e.get("addresses") or [e["address"]]) > 1:
-                e["hostname"] = placed.get("hostname")   # the name of the router it is placed by
+                e["hostname"] = placed.get("hostname") or named.get(addr)   # the router it is placed by
             for key in _PLACE_KEYS:
                 if placed.get(key) is not None:
                     e[key] = placed[key]
@@ -281,8 +290,9 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
     if not parsed.hops:
         raise TraceParseError("No hops were found in that trace.")
     hoiho_records, ruleset, ip_records, names = await geo.gather_records(parsed.hops, sources, progress)
-    located = geo.annotate(geo.neighbour_check(geo.locate_hops(parsed.hops, hoiho_records, ip_records,
-                                                               origin)))
+    located = geo.place_anycast(geo.annotate(geo.neighbour_check(geo.locate_hops(parsed.hops, hoiho_records,
+                                                                                 ip_records, origin))),
+                                origin, discovery.address)
     out = discovery.to_dict()
 
     def locate_sequence(seq: list[str | None], rtts: list[float | None]) -> list[dict]:
@@ -292,11 +302,12 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
             if addr:
                 hop.add_address(addr)
                 if names.get(addr):
-                    hop.add_hostname(names[addr])
+                    hop.add_named(names[addr], addr)
                 if rtt is not None:
                     hop.rtts_ms.append(round(rtt, 3))
             hops.append(hop)
-        placed = geo.neighbour_check(geo.locate_hops(hops, hoiho_records, ip_records, origin)) if hops else []
+        placed = geo.place_anycast(geo.neighbour_check(geo.locate_hops(hops, hoiho_records, ip_records, origin)),
+                                   origin, discovery.address) if hops else []
         return [{k: h.get(k) for k in PATH_HOP_FIELDS if k in _REQUIRED_PATH_FIELDS or h.get(k) is not None}
                 for h in placed]
 
@@ -321,7 +332,7 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
             group += [h for h in locate_sequence(seq, rtts) if h.get("hop") == ttl]
         out["per_packet"].append({"hop": ttl, "located": group})
     one_place_per_address(located, [entry["located"] for entry in out["paths"]]
-                          + [g["located"] for g in out["per_packet"]])
+                          + [g["located"] for g in out["per_packet"]], dict(names))
     if discovery.final_hop is not None:
         _mark_final_probe(located, [entry["located"] for entry in out["paths"]], discovery.final_hop)
     label = PARSER_LABELS.get(parsed.parser, parsed.parser)
@@ -331,6 +342,11 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
     return Route(parser=parsed.parser, parser_label=label,
                  target=discovery.target, warnings=list(parsed.warnings), hoiho_ruleset_date=ruleset,
                  origin=origin_block(origin, located), hops=located, paths=out)
+
+
+def _named(hops: list[Hop]) -> dict[str, str]:
+    """Address to hostname, for the pairs the trace or reverse DNS gave."""
+    return {addr: name for hop in hops for name, addr in hop.named.items()}
 
 
 def _median_of(values: list[float]) -> float | None:

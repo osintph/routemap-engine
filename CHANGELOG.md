@@ -37,6 +37,16 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - `route.schema.json`: `resolved`, `dns`, `ports`, hop `masked`, and the new
   Paths fields below.
 - Classifiers for Python 3.11, 3.12 and 3.13.
+- **Anycast destinations are placed.** When the destination answered faster
+  than its registered location allows from the origin, it is placed at the
+  largest city the RTT reaches, with the new source `anycast` and the
+  reason "likely anycast, served from near X (registered in Y, N km away,
+  but answered in M ms)" (`geo.place_anycast`). Only the destination: a
+  router that answers too fast keeps "not placed". `analyse(destination=...)`
+  and `ProgressiveTrace.destination` name the address traced where the text
+  does not (mtr); a traceroute or tracert banner's address is used
+  otherwise. bbc.com's Fastly address answered in 5 to 10 ms from Manila,
+  is registered in Montreal and was left unplaced.
 
 ### Changed
 
@@ -90,6 +100,15 @@ Keep a Changelog format; this project uses Semantic Versioning.
   and their hop's main row has several routers, so nothing placed them
   (62.115.132.229 at hop 11 of the 12 Oct ODIN run, placed in Frankfurt by
   every earlier run). Each is now placed on its own (`paths.per_packet`).
+- **A row placed by a hostname shows that hostname's router.** At a hop
+  several routers answered, the row kept the hop's first address whatever
+  name placed it, so it could read "62.115.153.153, ffm-b16-link" (another
+  router's name), and that address's own rejection then cleared the row.
+  `Hop.named` keeps each hostname with the address it was printed or
+  resolved with; a hostname placement takes that address, an IP database
+  placement takes that address's own name (or none), and such a row counts
+  as evidence for its address (ODIN, heise.de, 26 Oct 2026: hop 11 placed
+  in Frankfurt by ffm-b16-link's site code, then shown unplaced).
 
 ## [0.7.1] - 2026-10-12
 

@@ -106,6 +106,10 @@ SOURCE_SITE_CODE = sitecodes.SOURCE   # "site-code"
 SOURCE_IP_DB = "ip-db"
 SOURCE_LOCAL = "local"
 SOURCE_UNRESOLVED = "unresolved"
+# The destination answered faster than the place it is registered at allows:
+# it is served from somewhere near the origin (anycast), placed at the largest
+# city the RTT reaches. An inference, said as one ("likely anycast").
+SOURCE_ANYCAST = "anycast"
 
 # Set on a hop placed only to country level (the IP database had no city).
 # Absent on every other hop.
@@ -413,6 +417,16 @@ def _blank_location(hop: Hop) -> dict:
     }
 
 
+def _name_of(hop: Hop, addr: str) -> str | None:
+    """The hostname that goes with *addr* at *hop*: the one it was printed or
+    resolved with, the hop's only name when only one router answered, or none
+    (another router's name next to this address would say the wrong thing)."""
+    for name, owner in hop.named.items():
+        if owner == addr:
+            return name
+    return hop.hostnames[0] if hop.hostnames and len(hop.addresses) <= 1 else None
+
+
 def _reject_reason(distance: float | None, budget: float | None) -> str:
     if distance is None or budget is None:
         return ANNOT_RTT_IMPOSSIBLE
@@ -487,7 +501,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                 # an ECMP hop is not always the first one the hop answered
                 # from. Showing hostnames[0] next to a place derived from
                 # hostnames[1] reads as a contradiction.
-                "hostname": hostname,
+                "hostname": hostname, "address": hop.named.get(hostname, entry["address"]),
                 "place": _hoiho_place(record), "cc": record.get("cc"),
                 "distance_km": distance, "rtt_budget_km": budget,
                 "match_strs": record.get("match_strs") or [],
@@ -522,7 +536,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                 entry["candidates"].append(candidate)
                 entry.update({
                     "source": SOURCE_SITE_CODE, "lat": lat, "lon": lon,
-                    "hostname": hostname,
+                    "hostname": hostname, "address": hop.named.get(hostname, entry["address"]),
                     "place": record["place"], "cc": record["cc"],
                     "distance_km": distance, "rtt_budget_km": budget,
                     "carrier": record["carrier"], "site_code": record["code"],
@@ -554,7 +568,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
                 entry["candidates"].append(candidate)
                 entry.update({
                     "source": SOURCE_IP_DB, "lat": lat, "lon": lon,
-                    "address": addr,
+                    "address": addr, "hostname": _name_of(hop, addr),
                     "place": _ip_place(record), "cc": record.get("cc"),
                     "distance_km": distance, "rtt_budget_km": budget,
                     # Which tier answered: "ripestat" (online) or "dbip" (offline).
@@ -584,6 +598,69 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
     return located
 
 
+# ------------------------------------------------------------------- anycast ---
+
+def plausible_region(origin: tuple[float, float], budget_km: float) -> dict | None:
+    """The most populous bundled city within *budget_km* of the origin."""
+    from routemap_engine import cities
+    for row in cities._table():          # sorted by population, largest first
+        city = cities._as_dict(row)
+        if haversine_km(origin[0], origin[1], city["lat"], city["lon"]) <= budget_km:
+            return city
+    return None
+
+
+def anycast_text(region: str, registered: str | None, distance_km: float, rtt_ms: float) -> str:
+    where = f"registered in {registered}, " if registered else "registered "
+    return (f"likely anycast, served from near {region} ({where}{distance_km:,.0f} km away, but answered in "
+            f"{rtt_ms:.0f} ms)")
+
+
+def place_anycast(located: list[dict], origin: tuple[float, float] | None,
+                  destination: str | None) -> list[dict]:
+    """Place the destination when it answered faster than its registered
+    location allows: the IP database's place was rejected by the round trip
+    from the origin, which for a content network's address means the answer
+    came from a node near the origin (bbc.com's Fastly address from Manila,
+    26 Oct 2026: 5 to 10 ms, registered in Montreal). Placed at the largest
+    city the RTT reaches, as the anycast note says, with source "anycast".
+    Only the destination: a router that answers too fast is a wrong record,
+    not anycast. Edits the rows in place."""
+    if origin is None or not destination:
+        return located
+    for entry in located:
+        if (entry.get("address") != destination or entry.get("source") != SOURCE_UNRESOLVED
+                or entry.get("min_rtt_ms") is None):
+            continue
+        registered = next((c for c in entry.get("candidates") or []
+                           if c.get("source") == SOURCE_IP_DB and c.get("address") == destination
+                           and not c.get("accepted") and c.get("distance_km") is not None
+                           and c.get("rtt_budget_km") is not None and c["distance_km"] > c["rtt_budget_km"]), None)
+        if registered is None:
+            continue
+        city = plausible_region(origin, registered["rtt_budget_km"])
+        if city is None:
+            continue
+        distance = round(haversine_km(origin[0], origin[1], city["lat"], city["lon"]), 1)
+        why = anycast_text(city["display"], registered.get("place"), registered["distance_km"], entry["min_rtt_ms"])
+        entry["candidates"].append({"source": SOURCE_ANYCAST, "address": destination, "place": city["display"],
+                                    "lat": city["lat"], "lon": city["lon"], "distance_km": distance,
+                                    "rtt_budget_km": registered["rtt_budget_km"], "accepted": True})
+        entry.update({"source": SOURCE_ANYCAST, "lat": city["lat"], "lon": city["lon"], "place": city["display"],
+                      "cc": city["cc"], "distance_km": distance, "rtt_budget_km": registered["rtt_budget_km"],
+                      "reason": why})
+        entry["annotations"] = [a for a in entry.get("annotations") or [] if a != ANNOT_RTT_IMPOSSIBLE]
+    return located
+
+
+def destination_of(target: str | None) -> str | None:
+    """*target* when it is an address (a traceroute or tracert banner's)."""
+    try:
+        return str(ipaddress.ip_address((target or "").strip("[]()")))
+    except ValueError:
+        return None
+
+
 # ----------------------------------------------------------------- annotating ---
 
 # The neighbour check: two placed hops this close count as "the same area",
@@ -591,7 +668,7 @@ def locate_hops(hops: list[Hop], hoiho_records: dict, ip_records: dict,
 # in RTT.
 NEIGHBOUR_SAME_AREA_KM = 500.0
 NEIGHBOUR_DETOUR_KM = 1500.0
-_PLACED_SOURCES = (SOURCE_HOIHO, SOURCE_SITE_CODE, SOURCE_IP_DB)
+_PLACED_SOURCES = (SOURCE_HOIHO, SOURCE_SITE_CODE, SOURCE_IP_DB, SOURCE_ANYCAST)
 
 
 def neighbour_check(located: list[dict]) -> list[dict]:
@@ -968,7 +1045,7 @@ async def gather_records(hops: list[Hop], sources: Sources | None = None,
                 for addr in hop.addresses:
                     name = resolved.get(addr)
                     if name:
-                        hop.add_hostname(name)
+                        hop.add_named(name, addr)
             log.info("event=routemap_reverse_dns asked=%d resolved=%d",
                      len(set(unnamed)), len(resolved))
 
