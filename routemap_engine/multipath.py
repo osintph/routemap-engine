@@ -210,6 +210,7 @@ class Discovery:
     final_hop: int | None = None          # where a full-TTL answer after silent hops is numbered
     icmp_checks: dict[int, str | None] = field(default_factory=dict)   # TTL -> ICMP check answer (TCP runs)
     tcp_silent_from: int | None = None    # first TTL of a stretch silent to TCP whose ICMP check answered
+    tcp_silent_by: str | None = None      # who answered that ICMP check: "router" or "target"
     ping_interval: float | None = None    # seconds between rounds of target attempts, at least
 
     @property
@@ -230,6 +231,7 @@ class Discovery:
                 "stopped_by": self.stopped_by, "stop_text": self.stop_text, "seconds": round(self.seconds, 1),
                 "max_hops": self.max_hops, "silent_stop": None if self.silent_stop is None else list(self.silent_stop),
                 "final_hop": self.final_hop, "tcp_silent_from": self.tcp_silent_from,
+                "tcp_silent_by": self.tcp_silent_by,
                 "ping_interval": self.ping_interval,
                 "icmp_checks": [{"ttl": t, "address": a} for t, a in sorted(self.icmp_checks.items())],
                 "resolved": {"name": self.target, "address": self.address, "family": self.af}}
@@ -317,6 +319,9 @@ class Discovery:
         d.final_hop = None if data.get("final_hop") is None else ttl(data["final_hop"], MAX_HOPS + 1)
         d.tcp_silent_from = None if data.get("tcp_silent_from") is None else ttl(data["tcp_silent_from"])
         d.ping_interval = num(data.get("ping_interval"))
+        if data.get("tcp_silent_by") not in (None, "router", "target"):
+            raise ValueError("bad tcp_silent_by")
+        d.tcp_silent_by = data.get("tcp_silent_by")
         d.icmp_checks = {ttl(c["ttl"]): addr(c["address"], True) for c in data.get("icmp_checks") or []}
         return d
 
@@ -928,12 +933,29 @@ class Discoverer:
             p.rtt_to_target_ms for p in late if p.rtt_to_target_ms is not None)
 
     def _tcp_silence(self):
-        """Where routers stopped answering TCP but answered the ICMP check:
-        the first TTL of the silent stretch that ended the discovery, when the
-        ICMP check there was answered."""
         d = self.d
-        if d.silent_stop and d.icmp_checks.get(d.silent_stop[0]):
-            d.tcp_silent_from = d.silent_stop[0]
+        d.tcp_silent_from, d.tcp_silent_by = tcp_silence(d)
+
+
+def tcp_silence(d: Discovery) -> tuple[int | None, str | None]:
+    """Where TCP probes went unanswered while the ICMP check at the same TTL
+    was answered, and by whom: (first TTL of the silent stretch that ended the
+    discovery, "router" or "target"), or (None, None).
+
+    "router": routers there answer ICMP but not TCP probes; a trace over
+    ICMP can map on. "target": the target itself answered ICMP at that TTL,
+    so the routers in front of it were all found, and only its TCP service
+    stayed silent until the full-TTL attempts; something in front of the
+    target that answers for it, a firewall or load balancer, is the likely
+    reading (ODIN, heise.de, 25 Oct 2026: TCP silent at 15 to 19, every
+    ICMP check there answered by 193.99.144.80, the full-TTL attempt
+    reached it)."""
+    if not d.silent_stop:
+        return None, None
+    answer = d.icmp_checks.get(d.silent_stop[0])
+    if not answer:
+        return None, None
+    return d.silent_stop[0], ("target" if answer == d.address else "router")
 
 
 def available() -> tuple[bool, str]:

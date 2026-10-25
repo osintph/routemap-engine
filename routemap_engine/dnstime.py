@@ -7,7 +7,9 @@ WHAT IS MEASURED
 * **The system resolver.** One ``getaddrinfo`` for IPv4 (A) and one for IPv6
   (AAAA), each timed. The operating system's resolver may answer from its
   cache and does not say whether it did, so authoritative and cached are
-  "not stated" (None) for these rows.
+  "not stated" (None) for these rows. An empty answer says only that the
+  system returned no address of that family: a computer without IPv6 gets
+  none for AAAA even when the record exists.
 * **Each resolver the caller names** (the user's own list; none by default):
   one A and one AAAA query over UDP port 53, recursion desired, timed to the
   first answer. Recorded: the response code, the AA bit ("the responding name
@@ -132,13 +134,21 @@ def _system_lookup(name: str, rtype: str, getaddrinfo, clock) -> Lookup:
             addr = str(ipaddress.ip_address(sockaddr[0].split("%")[0]))
             if addr not in seen:
                 seen.append(addr)
-    return Lookup(SYSTEM, rtype, ms, addresses=seen, error=None if seen else f"no {rtype} answer")
+    return Lookup(SYSTEM, rtype, ms, addresses=seen, error=None if seen else _NO_ADDRESS[rtype])
+
+
+# What an empty system answer says, and no more: the system resolver gives no
+# IPv6 address to a computer without IPv6 even when the name has AAAA records
+# (ODIN, 25 Oct 2026: bbc.com and heise.de, whose AAAA records the Mac listed
+# the same day), so an empty row never claims the record is missing.
+_NO_ADDRESS = {"A": "system resolver returned no IPv4 address",
+               "AAAA": "system resolver returned no IPv6 address (this computer may have no IPv6)"}
 
 
 def _gai_text(exc: Exception, rtype: str) -> str:
     if isinstance(exc, socket.gaierror) and exc.errno in (getattr(socket, "EAI_NONAME", -2),
                                                           getattr(socket, "EAI_NODATA", -5)):
-        return f"no {rtype} record"
+        return _NO_ADDRESS[rtype]
     return f"lookup failed ({exc.__class__.__name__})"
 
 

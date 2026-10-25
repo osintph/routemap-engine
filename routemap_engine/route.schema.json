@@ -823,6 +823,14 @@
           ],
           "minimum": 0,
           "description": "0.8.0: seconds between rounds of target attempts, at least."
+        },
+        "tcp_silent_by": {
+          "enum": [
+            "router",
+            "target",
+            null
+          ],
+          "description": "0.8.0: who answered the ICMP check where TCP went silent: a router (the network does not answer TCP probes) or the target itself (something in front of it answers for its TCP service)."
         }
       }
     },

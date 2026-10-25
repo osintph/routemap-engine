@@ -21,12 +21,13 @@ TARGET = "151.101.0.81"
 
 class SilentNet(odin_net.Net):
     def __init__(self, *, tcp_silent_from: int = 3, target_hop: int = 10, icmp_answers: bool = True,
-                 target_answers: bool = True):
+                 target_answers: bool = True, icmp_target_from: int | None = None):
         super().__init__()
         self.tcp_silent_from = tcp_silent_from
         self.target_hop = target_hop
         self.icmp_answers = icmp_answers
         self.target_answers = target_answers
+        self.icmp_target_from = icmp_target_from        # the target answers ICMP from this TTL on
         self.routers = {t: (f"198.51.100.{t}" if t < 3 else f"203.0.113.{t}") for t in range(1, target_hop)}
         self.icmp_sent: list[int] = []
 
@@ -49,7 +50,7 @@ class SilentNet(odin_net.Net):
 
     def icmp_check(self, ttl: int) -> str | None:
         self.icmp_sent.append(ttl)
-        if ttl >= self.target_hop:
+        if ttl >= self.target_hop or (self.icmp_target_from is not None and ttl >= self.icmp_target_from):
             return TARGET
         return self.routers[ttl] if self.icmp_answers else None
 
