@@ -61,6 +61,7 @@ def test_windows_time_out_is_filtered_and_says_how_long_it_waited(monkeypatch, p
     monkeypatch.setattr(ports.select, "select", select)
     r = ports._one(RUN["ports"]["address"], port, 3.0, False, None, False, lambda: now[0])
     assert (r.state, r.reason) == ("filtered", "no answer (the system gave up after 1.0 s)"), r
+    assert r.waited == 1.0
 
 
 def test_a_time_out_at_the_end_of_the_wait_reads_as_the_wait():
@@ -69,7 +70,10 @@ def test_a_time_out_at_the_end_of_the_wait_reads_as_the_wait():
         assert ports._failed(22, rc, 3.0, 3.0).to_dict()["reason"] == "no answer in 3 s"
 
 
-def test_windows_keeps_its_syn_retries_so_the_wait_is_honoured(monkeypatch):
+def test_windows_sends_one_syn_and_the_result_says_the_wait_it_really_used(monkeypatch):
+    """Windows retries after a reset when SYN retransmissions are on (a closed
+    port read "filtered" on Windows CI, 25 Oct 2026), so it keeps one SYN; it
+    then gives up after about 1 s, and the result says so instead of 3 s."""
     called = []
     monkeypatch.setattr(probe, "no_syn_retransmissions", lambda sock, *a: called.append(sock) or True)
 
@@ -77,7 +81,12 @@ def test_windows_keeps_its_syn_retries_so_the_wait_is_honoured(monkeypatch):
         def setsockopt(self, *a):
             pass
     ports._windows_options(Sock())
-    assert called == []
+    assert len(called) == 1
+    res = ports.PortsResult("151.101.64.81", [ports.PortResult(22, "filtered", "no answer (the system gave up "
+                                                                   "after 1.0 s)", waited=1.02),
+                                              ports.PortResult(443, "open", connect_ms=10.2)], wait=3.0)
+    out = res.to_dict()
+    assert out["wait"] == 3.0 and out["wait_used"] == 1.0 and out["results"][0]["waited"] == 1.0
 
 
 # ------------------------------------------------------------- 3. TCP silence

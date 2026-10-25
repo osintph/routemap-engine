@@ -183,9 +183,11 @@ def _check_ports(block: dict) -> dict:
             raise ValueError("bad port state")
         rows.append({"port": portsmod.parse_ports([r.get("port")])[0], "state": state, "reason": _short(r.get("reason")),
                      "connect_ms": _num(r.get("connect_ms")), "tls_ms": _num(r.get("tls_ms")),
-                     "tls_version": _short(r.get("tls_version")), "tls_error": _short(r.get("tls_error"))})
+                     "tls_version": _short(r.get("tls_version")), "tls_error": _short(r.get("tls_error")),
+                     "waited": _num(r.get("waited"))})
     return {"address": str(ipaddress.ip_address(block.get("address"))), "cap": portsmod.MAX_PORTS,
-            "parallel": portsmod.PARALLEL, "wait": _num(block.get("wait")), "seconds": _num(block.get("seconds")),
+            "parallel": portsmod.PARALLEL, "wait": _num(block.get("wait")), "wait_used": _num(block.get("wait_used")),
+            "seconds": _num(block.get("seconds")),
             "results": rows}
 
 
