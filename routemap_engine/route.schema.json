@@ -133,7 +133,8 @@
           "enum": [
             "hoiho",
             "site-code",
-            "ip-db"
+            "ip-db",
+            "anycast"
           ]
         },
         "accepted": {
@@ -298,6 +299,7 @@
             "hoiho",
             "site-code",
             "ip-db",
+            "anycast",
             "local",
             "unresolved"
           ]
@@ -478,6 +480,7 @@
             "hoiho",
             "site-code",
             "ip-db",
+            "anycast",
             "local",
             "unresolved"
           ]

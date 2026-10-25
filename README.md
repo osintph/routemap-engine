@@ -55,6 +55,12 @@ diff.diff_routes(old_route, new_route)["summary"]
   `ip_provider` (`dbip` or `ripestat`).
 - **Neighbour check**: a database placement between two placed hops in one
   area is rejected when the RTT rose too little to pay for the detour.
+- **Anycast**: a destination that answered faster than its registered place
+  allows is placed near the origin, at the largest city the RTT reaches,
+  with source `anycast` and the reason "likely anycast, served from near
+  ...". Pass `destination=` to `analyse` (or set
+  `ProgressiveTrace.destination`) when the trace text names no address, as
+  mtr's does not.
 - **RIPEstat client**: prefix, RIR, RPKI, RIS paths and visibility, BGP
   updates, AS overview and neighbours, abuse contacts; `ripe.ris_agreement`
   compares the trace's AS path with what RIS sees.

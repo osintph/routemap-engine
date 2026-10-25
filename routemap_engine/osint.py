@@ -168,12 +168,10 @@ def jurisdictions(route: dict, sensitive: set[str] | frozenset = frozenset()) ->
 # -------------------------------------------------------------------- anycast ---
 
 def _plausible_region(origin: tuple[float, float], budget_km: float) -> str | None:
-    """The most populous bundled city within *budget_km* of the origin."""
-    for row in cities._table():          # sorted by population, largest first
-        city = cities._as_dict(row)
-        if geo.haversine_km(origin[0], origin[1], city["lat"], city["lon"]) <= budget_km:
-            return city["display"]
-    return None
+    """The most populous bundled city within *budget_km* of the origin (the
+    place :func:`geo.place_anycast` puts the destination)."""
+    city = geo.plausible_region(origin, budget_km)
+    return city["display"] if city else None
 
 
 def anycast_note(route: dict, destination_registered: tuple[float, float] | None = None) -> str | None:
