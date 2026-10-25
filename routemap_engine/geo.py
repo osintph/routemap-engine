@@ -610,10 +610,11 @@ def plausible_region(origin: tuple[float, float], budget_km: float) -> dict | No
     return None
 
 
-def anycast_text(region: str, registered: str | None, distance_km: float, rtt_ms: float) -> str:
+def anycast_text(region: str, registered: str | None, distance_km: float, rtt_ms: float,
+                 past: str | None = None) -> str:
     where = f"registered in {registered}, " if registered else "registered "
     return (f"likely anycast, served from near {region} ({where}{distance_km:,.0f} km away, but answered in "
-            f"{rtt_ms:.0f} ms)")
+            f"{rtt_ms:.0f} ms" + (f", {past}" if past else "") + ")")
 
 
 def place_anycast(located: list[dict], origin: tuple[float, float] | None,
@@ -623,12 +624,15 @@ def place_anycast(located: list[dict], origin: tuple[float, float] | None,
     from the origin, which for a content network's address means the answer
     came from a node near the origin (bbc.com's Fastly address from Manila,
     26 Oct 2026: 5 to 10 ms, registered in Montreal). Placed at the largest
-    city the RTT reaches, as the anycast note says, with source "anycast".
-    Only the destination: a router that answers too fast is a wrong record,
-    not anycast. Edits the rows in place."""
+    city the RTT reaches, with source "anycast". Reached through a placed
+    hop, only the RTT added past that hop counts, from that hop's place: from
+    Manila at 8 ms the whole budget reaches Shantou, while the hop before it
+    answered at 7.9 ms in Pasig (Mac, 26 Oct 2026). Only the destination: a
+    router that answers too fast is a wrong record, not anycast. Edits the
+    rows in place."""
     if origin is None or not destination:
         return located
-    for entry in located:
+    for index, entry in enumerate(located):
         if (entry.get("address") != destination or entry.get("source") != SOURCE_UNRESOLVED
                 or entry.get("min_rtt_ms") is None):
             continue
@@ -638,11 +642,22 @@ def place_anycast(located: list[dict], origin: tuple[float, float] | None,
                            and c.get("rtt_budget_km") is not None and c["distance_km"] > c["rtt_budget_km"]), None)
         if registered is None:
             continue
-        city = plausible_region(origin, registered["rtt_budget_km"])
+        anchor = next((e for e in reversed(located[:index])
+                       if e.get("lat") is not None and e.get("min_rtt_ms") is not None
+                       and e.get("source") in (SOURCE_HOIHO, SOURCE_SITE_CODE, SOURCE_IP_DB, SOURCE_LOCAL)), None)
+        past = None
+        if anchor is not None:
+            added = max(0.0, entry["min_rtt_ms"] - anchor["min_rtt_ms"])
+            city = plausible_region((anchor["lat"], anchor["lon"]), max_distance_km(added))
+            if anchor.get("source") != SOURCE_LOCAL:
+                past = f"{added:.0f} ms past hop {anchor['hop']} ({anchor.get('place') or 'placed'})"
+        else:
+            city = plausible_region(origin, registered["rtt_budget_km"])
         if city is None:
             continue
         distance = round(haversine_km(origin[0], origin[1], city["lat"], city["lon"]), 1)
-        why = anycast_text(city["display"], registered.get("place"), registered["distance_km"], entry["min_rtt_ms"])
+        why = anycast_text(city["display"], registered.get("place"), registered["distance_km"], entry["min_rtt_ms"],
+                           past)
         entry["candidates"].append({"source": SOURCE_ANYCAST, "address": destination, "place": city["display"],
                                     "lat": city["lat"], "lon": city["lon"], "distance_km": distance,
                                     "rtt_budget_km": registered["rtt_budget_km"], "accepted": True})

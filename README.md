@@ -56,8 +56,9 @@ diff.diff_routes(old_route, new_route)["summary"]
 - **Neighbour check**: a database placement between two placed hops in one
   area is rejected when the RTT rose too little to pay for the detour.
 - **Anycast**: a destination that answered faster than its registered place
-  allows is placed near the origin, at the largest city the RTT reaches,
-  with source `anycast` and the reason "likely anycast, served from near
+  allows is placed at the largest city the RTT reaches (counted from the
+  last placed hop before it, with only the RTT added past that hop), with
+  source `anycast` and the reason "likely anycast, served from near
   ...". Pass `destination=` to `analyse` (or set
   `ProgressiveTrace.destination`) when the trace text names no address, as
   mtr's does not.

@@ -97,3 +97,24 @@ def test_the_route_validates_against_the_schema():
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads((pathlib.Path(geo.__file__).parent / "route.schema.json").read_text())
     jsonschema.validate(asyncio.run(analyse(TRACEROUTE, MANILA, sources=SOURCES)).to_dict(), schema)
+
+
+def test_reached_through_a_placed_hop_only_the_rtt_past_it_counts():
+    """Mac, 26 Oct 2026: hops 4 to 6 placed in Metro Manila at 7.7 to 7.9 ms,
+    bbc.com at 7.9 ms. The whole 8 ms budget from Manila reaches Shantou (the
+    largest city within it); from hop 6, the RTT added is nothing."""
+    pasig = {"lat": 14.5764, "lon": 121.0851, "city": "Pasig", "cc": "PH", "provider": "dbip"}
+    near = ("62.115.0.2", "62.115.0.3")              # synthetic: routers DB-IP places in Pasig
+
+    async def ip_db(addrs):
+        out = await _ip_db(addrs)
+        out.update({a: dict(pasig) for a in addrs if a in near})
+        return out
+    text = (f"traceroute to bbc.com ({DEST}), 30 hops max, 60 byte packets\n"
+            " 1  198.51.100.1  1.0 ms\n 2  198.51.100.2  3.0 ms\n"
+            f" 3  {near[0]}  7.7 ms\n 4  {near[1]}  7.9 ms\n 5  {DEST}  7.9 ms  8.1 ms\n")
+    route = asyncio.run(analyse(text, MANILA, sources=geo.Sources(ip_db=ip_db))).to_dict()
+    dest = route["hops"][-1]
+    assert dest["source"] == geo.SOURCE_ANYCAST and dest["cc"] == "PH", dest["place"]
+    assert geo.haversine_km(14.5764, 121.0851, dest["lat"], dest["lon"]) <= geo.SLACK_KM
+    assert "0 ms past hop 4 (Pasig, PH)" in dest["reason"]
