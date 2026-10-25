@@ -15,7 +15,8 @@ lookups with the server's own resolver (and the resolvers named), resolves
 the target once and probes that address. With ``--place ip`` the server's
 place is looked up the way Route Map finds this computer's (RIPEstat, so
 RIPEstat sees the server's address); only the place is printed, never the
-address, so the app never holds it. ``--stop-on-eof``: the run stops when its
+address, so the app never holds it. The server's own name is taken out of the
+tool output too (mtr prints it as "HOST:"). ``--stop-on-eof``: the run stops when its
 stdin closes (the app closed the ssh session), besides its own deadline.
 
 THE CLIENT SIDE (:func:`ssh_argv`, :func:`read_run`)
@@ -336,8 +337,10 @@ def mask_first_hops(route: dict) -> list[str]:
             elif public_seen >= MASK_MIN_PUBLIC and (provider_asn is None or asn != provider_asn):
                 break
             public_seen += 1
-        elif addrs and public_seen:
-            break                                     # a private hop after the provider's: not the provider
+        # A private hop never ends the stretch: providers number their core
+        # privately between public edges (vps-e7d7933f, 25 Oct 2026: the
+        # gateway at hop 1, seven private hops, the provider's next public
+        # router at hop 9).
         masked += [a for a in addrs if a not in masked]
         numbers.append(hop.get("hop"))
     # Silent hops at the end of the masked run belong to whatever follows.
@@ -474,6 +477,21 @@ def _emit_origin(out, lock) -> None:
                       "cc": me.get("cc")})                    # never me["ip"]
 
 
+_HOST_LINE = re.compile(r"^(\s*HOST:\s+)\S+", re.M)
+
+
+def _without_own_name(text: str) -> str:
+    """*text* without this machine's own name: mtr's report starts with
+    "HOST: <this machine>" (vps-e7d7933f, 25 Oct 2026), and a server's name
+    can lead to its address, which the agent never sends."""
+    text = _HOST_LINE.sub(r"\1agent", text)
+    import socket
+    own = {n for n in (socket.gethostname(), socket.gethostname().split(".")[0]) if len(n) > 2}
+    for name in sorted(own, key=len, reverse=True):
+        text = re.sub(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", "agent", text)
+    return text
+
+
 def _measure(args, out, lock, cancel: threading.Event) -> int:
     target = validate_target(args.target or "")
     deadline = max(1.0, min(args.deadline, MAX_DEADLINE))
@@ -492,8 +510,9 @@ def _measure(args, out, lock, cancel: threading.Event) -> int:
     if args.action == "trace":
         tr = runner.run_trace(target, runner.TraceOptions(
             family=args.family, address=resolved.address, timeout=max(1.0, left), cancel=cancel,
-            on_line=lambda line: _emit(out, lock, {"type": "line", "text": line})))
-        result.update(trace_text=tr.text, tool=tr.tool, cancelled=tr.cancelled, timed_out=tr.timed_out)
+            on_line=lambda line: _emit(out, lock, {"type": "line", "text": _without_own_name(line)})))
+        result.update(trace_text=_without_own_name(tr.text), tool=tr.tool, cancelled=tr.cancelled,
+                      timed_out=tr.timed_out)
     elif args.action == "paths":
         ok, why = multipath.available()
         if not ok:

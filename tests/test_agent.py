@@ -308,3 +308,35 @@ def test_the_engine_command_line(capsys):
     assert cli.main(["--version"]) == 0 and capsys.readouterr().out.startswith("routemap-engine 0.8")
     assert cli.main([]) == 2 and "usage" in capsys.readouterr().err
     assert cli.main(["agent", "1", "hello"]) == 0 and '"protocol":1' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("asn", [16276, None], ids=["as-known", "as-unknown"])
+def test_private_hops_between_the_providers_public_hops_do_not_end_the_stretch(asn):
+    """The shape of a real agent trace (an OVH VPS, 25 Oct 2026): the server's
+    gateway, seven private hops, the provider's next public router, a private
+    hop, then the next network. The gateway alone would have been masked."""
+    hops = [_hop(1, "51.68.0.1", asn)] + [_hop(i, f"10.29.0.{i}") for i in range(2, 9)]
+    hops += [_hop(9, "51.68.15.4", asn), _hop(10, "10.200.8.135"), _hop(11, "27.111.228.116", 64512),
+             _hop(12, "81.95.15.70", 33891), _hop(13, DST, 54113)]
+    route = _route(hops)
+    masked = agent.mask_first_hops(route)
+    assert [h["hop"] for h in route["hops"] if h.get("masked")] == list(range(1, 11))
+    assert "51.68.0.1" in masked and "51.68.15.4" in masked and route["hops"][10]["address"] == "27.111.228.116"
+
+
+def test_the_agents_own_name_never_leaves_it(monkeypatch):
+    """mtr's report names the machine it runs on ("HOST: vps-e7d7933f" on the
+    first real agent run); a server's name can lead to its address."""
+    import socket
+    _no_dns(monkeypatch)
+    monkeypatch.setattr(socket, "gethostname", lambda: "vps-0a1b2c3d.vps.example.net")
+    text = ("Start: 2026-10-25T09:05:48+0000\nHOST: vps-0a1b2c3d.vps.example.net   Loss%   Snt\n"
+            "  1.|-- _gateway (51.68.0.1)  0.0%  3  0.2\n  2.|-- vps-0a1b2c3d (51.68.0.9)  0.0%  3  0.3\n")
+
+    def fake_trace(target, options):
+        for line in text.splitlines():
+            options.on_line(line)
+        return runner.TraceResult(text=text, tool="mtr", argv=[], returncode=0, address=DST)
+    monkeypatch.setattr(runner, "run_trace", fake_trace)
+    rc, raw = _serve(["1", "trace", "--target", "bbc.com"])
+    assert b"vps-0a1b2c3d" not in raw and b"HOST: agent" in raw
