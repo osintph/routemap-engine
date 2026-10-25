@@ -1019,9 +1019,24 @@
                   "string",
                   "null"
                 ]
+              },
+              "waited": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
               }
             }
           }
+        },
+        "wait_used": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "0.8.0: the longest a filtered port was waited for; less than wait where the system gave up first (Windows, about 1 s)."
         }
       }
     }

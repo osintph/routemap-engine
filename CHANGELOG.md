@@ -78,9 +78,11 @@ Keep a Changelog format; this project uses Semantic Versioning.
   front of it, a firewall or load balancer, is the likely reading). ODIN,
   heise.de: TCP silent at 15 to 19, every ICMP check answered by the target.
 - **Port tests on Windows**: Windows' own time-out (WSAETIMEDOUT, 10060) is
-  "filtered", not "error", and SYN retransmissions stay on so the attempt
-  lasts its wait (it gave up after about 1 s of 3). When the system gives up
-  early the reason says after how long.
+  "filtered", not "error". Windows sends one SYN, as before: with
+  retransmissions on it also retries after a reset, and a closed port no
+  longer read "closed" within the wait. It then gives up after about 1 s, so
+  the reason says how long it really waited and `wait_used` gives the
+  longest such wait.
 - **An empty system AAAA row no longer claims the record is missing**:
   "system resolver returned no IPv6 address (this computer may have no
   IPv6)", and likewise for IPv4.

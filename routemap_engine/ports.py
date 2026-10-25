@@ -16,13 +16,15 @@ STATES (Nmap's definitions, Nmap Reference Guide, "Port Scanning Basics")
 * **filtered**: "packet filtering prevents its probes from reaching the
   port": no answer within the wait, or an ICMP unreachable (reason says which).
 
-One connection attempt per port, with the wait it was given on every
-platform: the system may resend its SYN inside the wait, as its connect does.
-On Windows a router's ICMP error fails the attempt at once
-(TCP_FAIL_CONNECT_ON_ICMP_ERROR). Windows' own time-out (WSAETIMEDOUT, 10060)
-is "filtered" too; when the system gave up before the wait, the reason says
-after how long. (0.8.0.dev1 sent exactly one SYN on Windows, and Windows then
-gave up after its initial RTO, about 1 s, of a 3 s wait: ODIN, 25 Oct 2026.)
+One connection attempt per port. On Windows exactly one SYN
+(SIO_TCP_INITIAL_RTO, as the Paths prober), and a router's ICMP error fails
+the attempt at once (TCP_FAIL_CONNECT_ON_ICMP_ERROR): with retransmissions on,
+Windows also tries again after a reset, so a closed port did not answer
+"closed" within the wait (Windows CI, 25 Oct 2026). With one SYN Windows gives
+up after its first retransmission timer, about 1 s (ODIN, 25 Oct 2026), so
+the wait used there is shorter than the one asked for; that time-out
+(WSAETIMEDOUT, 10060) is "filtered", and the reason and ``wait_used`` say how
+long it really was. macOS and Linux may resend the SYN inside the wait.
 
 TLS: for 443 and the ports the caller marks, a TLS handshake right after the
 connection, server name set to the target's name, timed from ClientHello to
@@ -93,6 +95,7 @@ class PortResult:
     port: int
     state: str                         # open | closed | filtered | error
     reason: str | None = None          # "no answer in 3 s", "unreachable", "reset", ...
+    waited: float | None = None        # seconds the attempt took when nothing answered
     connect_ms: float | None = None    # open ports only
     tls_ms: float | None = None
     tls_version: str | None = None
@@ -102,6 +105,7 @@ class PortResult:
         out = asdict(self)
         for k in ("connect_ms", "tls_ms"):
             out[k] = None if out[k] is None else round(out[k], 1)
+        out["waited"] = None if self.waited is None else round(self.waited, 1)
         return out
 
 
@@ -113,9 +117,17 @@ class PortsResult:
     cap: int = MAX_PORTS
     seconds: float = 0.0
 
+    @property
+    def wait_used(self) -> float | None:
+        """The longest a filtered port was waited for: the configured wait, or
+        less where the system gave up first (Windows, about 1 s)."""
+        waits = [r.waited for r in self.results if r.state == "filtered" and r.waited is not None]
+        return round(max(waits), 1) if waits else None
+
     def to_dict(self) -> dict:
         return {"address": self.address, "cap": self.cap, "parallel": PARALLEL, "wait": self.wait,
-                "seconds": round(self.seconds, 1), "results": [r.to_dict() for r in self.results]}
+                "wait_used": self.wait_used, "seconds": round(self.seconds, 1),
+                "results": [r.to_dict() for r in self.results]}
 
     @property
     def open_count(self) -> int:
@@ -123,13 +135,13 @@ class PortsResult:
 
 
 def _windows_options(sock) -> None:
-    """A router's ICMP error fails the attempt at once. SYN retransmissions
-    stay on, so the attempt lasts the wait it was given."""
+    """One SYN, and a router's ICMP error fails the attempt at once."""
     from routemap_engine import probe
     try:
         sock.setsockopt(socket.IPPROTO_TCP, probe.TCP_FAIL_CONNECT_ON_ICMP_ERROR, 1)
     except OSError:
         pass
+    probe.no_syn_retransmissions(sock)
 
 
 def _one(address: str, port: int, wait: float, tls: bool, server_name: str | None,
@@ -148,7 +160,7 @@ def _one(address: str, port: int, wait: float, tls: bool, server_name: str | Non
         if rc != 0:
             _, writable, failed = select.select([], [sock], [sock], wait)
             if not writable and not failed:
-                return PortResult(port, "filtered", f"no answer in {wait:g} s")
+                return PortResult(port, "filtered", f"no answer in {wait:g} s", waited=clock() - started)
             rc = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
             if rc != 0:
                 return _failed(port, rc, clock() - started, wait)
@@ -172,8 +184,9 @@ def _failed(port: int, rc: int, elapsed: float | None = None, wait: float | None
         return PortResult(port, "filtered", "unreachable")
     if rc in _TIMED_OUT:
         if elapsed is not None and wait is not None and elapsed < wait - 0.25:
-            return PortResult(port, "filtered", f"no answer (the system gave up after {elapsed:.1f} s)")
-        return PortResult(port, "filtered", f"no answer in {wait:g} s" if wait else "no answer")
+            return PortResult(port, "filtered", f"no answer (the system gave up after {elapsed:.1f} s)",
+                              waited=elapsed)
+        return PortResult(port, "filtered", f"no answer in {wait:g} s" if wait else "no answer", waited=elapsed)
     return PortResult(port, "error", f"connection failed (error {rc})")
 
 
