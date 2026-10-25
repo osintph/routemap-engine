@@ -52,6 +52,12 @@ class Route:
     # located hops. None for an ordinary trace, and then not in to_dict(), so
     # FalconEye's output is unchanged.
     paths: dict | None = None
+    # 0.8.0, each None unless the caller measured it, and then not in
+    # to_dict(): the address traced (dnstime.Resolved), the DNS timing rows
+    # (dnstime.Lookup) and the port tests (ports.PortsResult).
+    resolved: dict | None = None
+    dns: list | None = None
+    ports: dict | None = None
 
     def to_dict(self) -> dict:
         """The JSON object, keys in the order FalconEye has always sent them."""
@@ -66,6 +72,9 @@ class Route:
         }
         if self.paths is not None:
             out["paths"] = copy.deepcopy(self.paths)
+        for key in ("resolved", "dns", "ports"):
+            if getattr(self, key) is not None:
+                out[key] = copy.deepcopy(getattr(self, key))
         return out
 
     @classmethod
@@ -76,7 +85,10 @@ class Route:
                    hoiho_ruleset_date=data.get("hoiho_ruleset_date"),
                    origin=dict(data.get("origin") or {}),
                    hops=[dict(h) for h in data.get("hops") or []],
-                   paths=copy.deepcopy(data["paths"]) if isinstance(data.get("paths"), dict) else None)
+                   paths=copy.deepcopy(data["paths"]) if isinstance(data.get("paths"), dict) else None,
+                   resolved=copy.deepcopy(data["resolved"]) if isinstance(data.get("resolved"), dict) else None,
+                   dns=copy.deepcopy(data["dns"]) if isinstance(data.get("dns"), list) else None,
+                   ports=copy.deepcopy(data["ports"]) if isinstance(data.get("ports"), dict) else None)
 
     @property
     def loss(self) -> dict:
@@ -272,9 +284,10 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
     located = geo.annotate(geo.neighbour_check(geo.locate_hops(parsed.hops, hoiho_records, ip_records,
                                                                origin)))
     out = discovery.to_dict()
-    for path, entry in zip(discovery.paths, out["paths"]):
+
+    def locate_sequence(seq: list[str | None], rtts: list[float | None]) -> list[dict]:
         hops = []
-        for ttl, (addr, rtt) in enumerate(zip(path.hops, path.rtt_ms), start=1):
+        for ttl, (addr, rtt) in enumerate(zip(seq, rtts), start=1):
             hop = Hop(hop=ttl, sent=1, lost=0 if addr else 1)
             if addr:
                 hop.add_address(addr)
@@ -284,9 +297,33 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
                     hop.rtts_ms.append(round(rtt, 3))
             hops.append(hop)
         placed = geo.neighbour_check(geo.locate_hops(hops, hoiho_records, ip_records, origin)) if hops else []
-        entry["located"] = [{k: h.get(k) for k in PATH_HOP_FIELDS if k in _REQUIRED_PATH_FIELDS or h.get(k) is not None}
-                            for h in placed]
-    one_place_per_address(located, [entry["located"] for entry in out["paths"]])
+        return [{k: h.get(k) for k in PATH_HOP_FIELDS if k in _REQUIRED_PATH_FIELDS or h.get(k) is not None}
+                for h in placed]
+
+    for path, entry in zip(discovery.paths, out["paths"]):
+        entry["located"] = locate_sequence(path.hops, path.rtt_ms)
+    # A per-packet hop is on no path row (it does not split paths), and its
+    # main row has several routers, which one_place_per_address does not take
+    # as evidence; 0.7.1 placed none of them (ODIN, 12 Oct 2026, hop 11
+    # 62.115.132.229, placed in Frankfurt by every earlier run). Each router
+    # there is placed as the one router of that hop on the first path, with
+    # that path's neighbours.
+    out["per_packet"] = []
+    base = discovery.paths[0] if discovery.paths else None
+    for ttl in discovery.per_packet_hops:
+        group = []
+        for addr in discovery.responders.get(ttl, []):
+            if base is None or ttl > len(base.hops):
+                continue
+            seq, rtts = list(base.hops), list(base.rtt_ms)
+            seq[ttl - 1] = addr
+            rtts[ttl - 1] = _median_of(discovery.rtts.get((ttl, addr), []))
+            group += [h for h in locate_sequence(seq, rtts) if h.get("hop") == ttl]
+        out["per_packet"].append({"hop": ttl, "located": group})
+    one_place_per_address(located, [entry["located"] for entry in out["paths"]]
+                          + [g["located"] for g in out["per_packet"]])
+    if discovery.final_hop is not None:
+        _mark_final_probe(located, [entry["located"] for entry in out["paths"]], discovery.final_hop)
     label = PARSER_LABELS.get(parsed.parser, parsed.parser)
     if out.get("method") == "tcp-paris":
         # The trace text is written in the ICMP prober's format; the probes were TCP.
@@ -294,6 +331,26 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
     return Route(parser=parsed.parser, parser_label=label,
                  target=discovery.target, warnings=list(parsed.warnings), hoiho_ruleset_date=ruleset,
                  origin=origin_block(origin, located), hops=located, paths=out)
+
+
+def _median_of(values: list[float]) -> float | None:
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None
+    mid = len(vals) // 2
+    return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
+
+
+def _mark_final_probe(main: list[dict], paths: list[list[dict]], number: int) -> None:
+    """The target's row at :attr:`multipath.Discovery.final_hop`: the answer to
+    the full-TTL attempts after a silent stretch, annotated as such."""
+    from routemap_engine import multipath
+    for entry in main + [h for path in paths for h in path]:
+        if entry.get("hop") == number and "annotations" in entry:
+            if multipath.ANNOT_FINAL_PROBE not in entry["annotations"]:
+                entry["annotations"] = list(entry["annotations"]) + [multipath.ANNOT_FINAL_PROBE]
+                details = entry.setdefault("annotation_details", [])
+                details.append(f"{multipath.ANNOT_FINAL_PROBE}: {multipath.FINAL_PROBE_DETAIL}")
 
 
 def analyse_paths_sync(discovery, origin: tuple[float, float] | None = None, *,

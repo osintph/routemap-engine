@@ -2,6 +2,66 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- **DNS response timing** (`routemap_engine.dnstime`): the target's A and
+  AAAA lookups timed through the system resolver and through each resolver
+  the caller names (IP addresses only, none by default), with the response
+  code, the AA bit and the TTL where the resolver states them. 2 s per query,
+  5 s for the step; a resolver that does not answer contributes nothing.
+- **One resolution per trace.** `dnstime.resolve_target` resolves the target
+  once; `TraceOptions(address=...)` and `multipath.discover(address=...)`
+  trace that address, and the system tools (traceroute, tracert, mtr) are
+  given the address instead of the name, so the address shown is the address
+  traced. `TraceResult.address` and `route.resolved` record it.
+- **Port tests** (`routemap_engine.ports`): one TCP connection attempt per
+  port to the traced address, at most 32 ports, 4 at a time; open with
+  connect time, closed (reset), filtered (no answer or unreachable); TLS
+  handshake time for 443 and the ports marked. Ranges are refused.
+- **Remote agents** (`routemap_engine.agent`, the `routemap-engine` command):
+  `routemap-engine agent 1 hello|trace|paths|ports` measures on the machine
+  it runs on and prints JSON lines; the client side builds a validated,
+  shell-quoted command and the ssh argument list (`-T`, `BatchMode=yes`,
+  `ConnectTimeout`, `--` before the destination), reads the answer within
+  8 MB in all and 1 MB per line and checks every field. The agent's place
+  can be looked up on the server; its address is never printed.
+  `agent.mask_first_hops` hides an agent trace's first hops in the server
+  provider's network (no address, name or place). `python -m routemap_engine`
+  works too.
+- `Discovery.to_wire` and `from_wire`: a path discovery measured elsewhere,
+  rebuilt with every field checked.
+- `route.schema.json`: `resolved`, `dns`, `ports`, hop `masked`, and the new
+  Paths fields below.
+- Classifiers for Python 3.11, 3.12 and 3.13.
+
+### Changed
+
+- **Paths stop after 5 silent hops** (was 3), scamper trace's and RIPE
+  Atlas's default.
+- **Every path is asked at full TTL**, reached or not: after a silent stop
+  the target attempts still run, and a path whose target answers only them
+  is reached at `final_hop`, the hop after the last one sent, with its
+  silent stretch in `silent` and the hop annotated "answered the final
+  full-TTL probe" (as RIPE Atlas sends a last probe with TTL 255). "Not
+  reached" now means the target was asked and did not answer.
+- **The Paths trace text header** names the probe sent ("TCP SYN to port
+  443" or "ICMP echo"), the configured hop limit and why the discovery
+  ended (`stop_text`: "stopped after 5 silent hops (3 to 7)"). It said "ICMP
+  echo" and "2 hops max" for a TCP run that stopped on silence.
+
+### Fixed
+
+- **Networks silent to TCP probes are named.** Over TCP, one ICMP echo per
+  hop where no TCP probe was answered, within the budget and the rate; when
+  the stretch that ended the discovery answers ICMP, `tcp_silent_from` says
+  from which hop (bbc.com over Converge, 0.4.0-beta.2).
+- **Routers at a per-packet hop keep their place.** They are on no path row
+  and their hop's main row has several routers, so nothing placed them
+  (62.115.132.229 at hop 11 of the 12 Oct ODIN run, placed in Frankfurt by
+  every earlier run). Each is now placed on its own (`paths.per_packet`).
+
 ## [0.7.1] - 2026-10-12
 
 Published 2026-10-12 to PyPI and GitHub Releases.

@@ -117,13 +117,13 @@ def check_route(dst: str) -> None:
                       f"({exc.strerror or exc}). Is IPv{family_of(dst)} working on this network?") from None
 
 
-def resolve(target: str, family: str = "auto") -> str:
+def resolve(target: str, family: str = "auto", *, getaddrinfo=None) -> str:
     """The address to trace for *target*: the system's first choice
     (getaddrinfo order) for "auto", else the first address of family "4"
     or "6". Raises :class:`NoAddress` when there is none."""
     af = {"4": socket.AF_INET, "6": socket.AF_INET6}.get(str(family), socket.AF_UNSPEC)
     try:
-        infos = socket.getaddrinfo(target, None, af, socket.SOCK_DGRAM)
+        infos = (getaddrinfo or socket.getaddrinfo)(target, None, af, socket.SOCK_DGRAM)
     except socket.gaierror as exc:
         if af == socket.AF_UNSPEC:
             raise
@@ -882,10 +882,12 @@ def format_hop(ttl: int, replies: list[Reply]) -> list[str]:
 
 def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait: float = WAIT_SECONDS,
           on_line: Callable[[str], None] | None = None, cancel: threading.Event | None = None,
-          deadline: float | None = None, family: str = "auto") -> tuple[str, bool, bool]:
+          deadline: float | None = None, family: str = "auto",
+          address: str | None = None) -> tuple[str, bool, bool]:
     """Trace *target* (a validated hostname or address) over IPv4 or IPv6
-    (*family*: "auto", "4" or "6"). Returns (text, cancelled, timed_out)."""
-    dst = resolve(target, family)
+    (*family*: "auto", "4" or "6"), to *address* when the caller resolved it
+    already. Returns (text, cancelled, timed_out)."""
+    dst = address or resolve(target, family)
     check_route(dst)
     max_hops = max(1, min(int(max_hops), MAX_TTL))
     queries = max(1, min(int(queries), MAX_QUERIES))

@@ -90,6 +90,9 @@ class TraceOptions:
     tool: str = "auto"                     # "auto" or one of TOOLS
     flags: list[str] | None = None         # None: DEFAULT_FLAGS[tool]
     family: str = "auto"                   # "auto" (the system's order), "4" or "6"
+    # The target's address when the caller resolved it already (0.8.0: the
+    # address it shows, dnstime.resolve_target). None: resolved here, once.
+    address: str | None = None
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     cancel: threading.Event | None = None
     on_line: Callable[[str], None] | None = None
@@ -106,6 +109,7 @@ class TraceResult:
     cancelled: bool = False
     timed_out: bool = False
     seconds: float = 0.0
+    address: str | None = None             # 0.8.0: the address traced, the one the tool was given
 
 
 def _platform() -> str:
@@ -288,15 +292,23 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     from routemap_engine import probe
     options = options or TraceOptions()
     tool, executable = pick_tool(options.tool)
-    argv = build_argv(tool, executable, target, options.flags)
-    family = probe.family_of(probe.resolve(validate_target(target), options.family))
+    name = validate_target(target)
+    # One resolution, here or by the caller, and the tool is given the
+    # address: traceroute, tracert and mtr would otherwise resolve the name
+    # again, and a CDN name can answer with another address each time (bbc.com
+    # on 0.4.0-beta.2: 151.101.0.81 for one run, 151.101.192.81 for the next).
+    address = validate_target(options.address) if options.address else probe.resolve(name, options.family)
+    family = probe.family_of(address)
     if tool == TOOL_ICMP:
-        result = _run_builtin(argv, options, family)
+        argv = build_argv(tool, executable, name, options.flags)
+        result = _run_builtin(argv, options, family, address)
         if result is not None:
             return result
         # The built-in prober cannot run for this family here: the system tool.
         tool, executable = pick_tool(TOOL_TRACERT if _platform() == "windows" else TOOL_TRACEROUTE)
-        argv = build_argv(tool, executable, target, None)
+        argv = build_argv(tool, executable, address, None)
+    else:
+        argv = build_argv(tool, executable, address, options.flags)
     argv = with_family(tool, argv, family)
 
     env = dict(os.environ)
@@ -349,7 +361,7 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     text = "\n".join(lines).strip("\n") + "\n" if lines else ""
     return TraceResult(text=text, tool=tool, argv=argv, returncode=returncode,
                        cancelled=cancelled, timed_out=timed_out,
-                       seconds=round(time.monotonic() - started, 2))
+                       seconds=round(time.monotonic() - started, 2), address=address)
 
 
 def _flag(flags: list[str], name: str, default: float) -> float:
@@ -359,7 +371,8 @@ def _flag(flags: list[str], name: str, default: float) -> float:
         return default
 
 
-def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4) -> TraceResult | None:
+def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4,
+                 address: str | None = None) -> TraceResult | None:
     """The built-in ICMP prober with the -m/-q/-w values in *argv*, over
     *family*. None when the prober cannot open a socket of that family here
     (Linux without ping_group_range, say), so the system tool runs instead."""
@@ -371,6 +384,7 @@ def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4) -> Tra
     text, cancelled, timed_out = probe.trace(
         target, max_hops=int(_flag(flags, "-m", probe.MAX_HOPS)), queries=int(_flag(flags, "-q", probe.QUERIES)),
         wait=_flag(flags, "-w", probe.WAIT_SECONDS), on_line=options.on_line, cancel=options.cancel,
-        deadline=started + options.timeout, family=str(family))
+        deadline=started + options.timeout, family=str(family), address=address)
     return TraceResult(text=text, tool=TOOL_ICMP, argv=argv, returncode=0, cancelled=cancelled,
-                       timed_out=timed_out, seconds=round(time.monotonic() - started, 2))
+                       timed_out=timed_out, seconds=round(time.monotonic() - started, 2),
+                       address=address)
