@@ -23,8 +23,10 @@ the wait, as their connect does.
 
 TLS: for 443 and the ports the caller marks, a TLS handshake right after the
 connection, server name set to the target's name, timed from ClientHello to
-the finished handshake, then closed. Certificates are not checked: the time
-says nothing about the certificate, and nothing is sent after the handshake.
+the finished handshake, then closed. TLS 1.2 or later; a server that offers
+only older versions shows as a failed handshake. Certificates are not
+checked: the time says nothing about the certificate, and nothing is sent
+after the handshake.
 """
 from __future__ import annotations
 
@@ -169,6 +171,7 @@ def _tls(sock, result: PortResult, wait: float, server_name: str | None, clock) 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE                     # timing only; nothing is said about the certificate
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2        # Python's client default, stated (CodeQL py/insecure-protocol)
     sock.setblocking(True)
     sock.settimeout(wait)
     started = clock()

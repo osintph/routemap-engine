@@ -12,7 +12,7 @@ import sys
 import time
 
 fixture, delay, target = sys.argv[1], float(sys.argv[2]), sys.argv[-1]
-lines = pathlib.Path(fixture).read_text().splitlines()
+lines = pathlib.Path(fixture).read_text(encoding="utf-8").splitlines()
 print(f"traceroute to {target} ({target}), 30 hops max, 60 byte packets", flush=True)
 for line in lines:
     if line.lower().startswith("traceroute to"):
