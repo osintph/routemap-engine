@@ -32,8 +32,12 @@ METHOD
   all return the same interface rule out per-packet balancing at 95%). If
   they differ, the hop is reported as balancing per packet and does not
   split paths.
-* **Per-path loss and latency.** Each path's first flow is then pinged at the
-  full hop limit, :data:`PATH_PINGS` times.
+* **Per-path loss and latency.** Each path is then asked at the full hop
+  limit :data:`PATH_PINGS` times, on its flows in turn, rounds at least
+  :data:`PING_INTERVAL` seconds apart.
+* **The target's hop ends a path.** A hop where only the target answers adds
+  no flows, and a flow silent where other flows of its path reached the
+  target is asked there again (twice at most) and never deeper.
 
 Paths found over ICMP are a lower bound: "some per-flow load balancers do not
 perform load balancing on ICMP packets" (IMC 2007). Every UI says "at least".
@@ -90,6 +94,13 @@ GAP_LIMIT = 5
 MAX_HOPS = 30
 WAIT = 1.0
 PATH_PINGS = 10
+# Seconds between two rounds of target attempts, at least: ping's default
+# ("Wait wait seconds between sending each packet. The default is to wait for
+# one second", ping(8)), so a short stretch of loss at the target cannot take
+# most of the ten (Mac run, 25 Oct 2026: 7 of 10 lost while discovery had
+# seen the target answer 53 of 63; heise.de answered 60 of 60 at 0.3 s and
+# 1 s spacing when measured again the same evening).
+PING_INTERVAL = 1.0
 PER_PACKET_PROBES = 5
 MAX_PATHS = 16
 PING_HOPS = 64
@@ -199,6 +210,7 @@ class Discovery:
     final_hop: int | None = None          # where a full-TTL answer after silent hops is numbered
     icmp_checks: dict[int, str | None] = field(default_factory=dict)   # TTL -> ICMP check answer (TCP runs)
     tcp_silent_from: int | None = None    # first TTL of a stretch silent to TCP whose ICMP check answered
+    ping_interval: float | None = None    # seconds between rounds of target attempts, at least
 
     @property
     def stop_text(self) -> str:
@@ -218,6 +230,7 @@ class Discovery:
                 "stopped_by": self.stopped_by, "stop_text": self.stop_text, "seconds": round(self.seconds, 1),
                 "max_hops": self.max_hops, "silent_stop": None if self.silent_stop is None else list(self.silent_stop),
                 "final_hop": self.final_hop, "tcp_silent_from": self.tcp_silent_from,
+                "ping_interval": self.ping_interval,
                 "icmp_checks": [{"ttl": t, "address": a} for t, a in sorted(self.icmp_checks.items())],
                 "resolved": {"name": self.target, "address": self.address, "family": self.af}}
 
@@ -303,6 +316,7 @@ class Discovery:
         d.silent_stop = [ttl(stop[0]), ttl(stop[1])] if stop else None
         d.final_hop = None if data.get("final_hop") is None else ttl(data["final_hop"], MAX_HOPS + 1)
         d.tcp_silent_from = None if data.get("tcp_silent_from") is None else ttl(data["tcp_silent_from"])
+        d.ping_interval = num(data.get("ping_interval"))
         d.icmp_checks = {ttl(c["ttl"]): addr(c["address"], True) for c in data.get("icmp_checks") or []}
         return d
 
@@ -418,6 +432,7 @@ class Discoverer:
         # 7" beside a note promising ten).
         self._pinging = False
         self._ping_reserve = min(self.o.pings * MAX_PATHS, self.o.budget // 3)
+        self._ended: set[int] = set()       # flows that ended at their path's target hop
         self._started = clock()
 
     # ------------------------------------------------------------- probing
@@ -572,7 +587,9 @@ class Discoverer:
 
     def _alive(self, flow: int, ttl: int) -> bool:
         """Whether *flow* still needs probing at *ttl* (it has not reached the
-        target at an earlier TTL)."""
+        target at an earlier TTL, nor ended at the target's hop of its path)."""
+        if flow in self._ended:
+            return False
         at = self._reached_at.get(flow)
         return at is None or at >= ttl
 
@@ -642,6 +659,13 @@ class Discoverer:
                     responders = {r[0] for r in at_hop if r and r[0]}
                     answered = sum(1 for r in at_hop if r and r[0])
                     k = len(responders)
+                    if responders and responders <= {self.address}:
+                        # Only the target answers here: the stopping rule is
+                        # about routers, and counting the few flows that got
+                        # this far added flows and probed each at every
+                        # earlier hop (Mac run, 25 Oct 2026: 1,350 probes for
+                        # a path complete at TTL 15).
+                        break
                     if k >= 2 and not per_packet_checked:
                         per_packet_checked = True
                         if self._per_packet(ttl):
@@ -660,6 +684,7 @@ class Discoverer:
                         break
                     last_k = k
                     want = min(MAX_FLOWS, m + (need - answered))
+                self._end_at_target(ttl, m)
                 self._progress(ttl)
                 alive = [f for f in range(m) if self._alive(f, ttl + 1)]
                 silent = not any((self._result.get((f, ttl)) or (None,))[0] for f in range(m))
@@ -698,6 +723,42 @@ class Discoverer:
         log.info("event=paths_done target=%s paths=%d probes=%d stopped_by=%s", tag(self.target),
                  len(d.paths), d.probes_sent, d.stopped_by)
         return d
+
+    def _end_at_target(self, ttl: int, m: int):
+        """Flows that were silent at the TTL where other flows of the same
+        path reached the target: asked there again (twice at most), then never
+        probed deeper. A flow with a router at that TTL is on another path and
+        goes on."""
+        reached = {g: r for g, r in self._reached_at.items() if r <= ttl}
+        if not reached:
+            return
+
+        def same_path(f: int, g: int, r: int) -> bool:
+            for t in range(1, r):
+                a = (self._result.get((f, t)) or (None,))[0]
+                b = (self._result.get((g, t)) or (None,))[0]
+                if a is not None and b is not None and a != b:
+                    return False
+            return True
+        todo: list[tuple[int, int]] = []
+        for f in range(m):
+            if f in self._reached_at or f in self._ended:
+                continue
+            for g, r in reached.items():
+                if (f, r) in self._result and self._result[(f, r)][0] is None and same_path(f, g, r):
+                    todo.append((f, r))
+                    break
+        ended = [f for f, _r in todo]
+        for _ in range(2):
+            if not todo or self._stopping():
+                break
+            for key in todo:
+                self._result.pop(key, None)
+            self._record(self._batch(todo))
+            for f, r in todo:
+                self._result.setdefault((f, r), (None, None, False))
+            todo = [(f, r) for f, r in todo if f not in self._reached_at]
+        self._ended.update(ended)
 
     def _per_packet(self, ttl: int) -> bool:
         # A router's answer, not the target's: probing a flow that reached a TCP
@@ -819,9 +880,15 @@ class Discoverer:
             return
         reached = list(d.paths)
         rtts: dict[str, list[float]] = {p.id: [] for p in reached}
+        d.ping_interval = PING_INTERVAL
+        last_round: float | None = None
         for r in range(self.o.pings):
             if self._stopping():
                 break
+            if last_round is not None:
+                while (left := last_round + PING_INTERVAL - self.clock()) > 0 and not self._stopping():
+                    self.t.read(left)         # nothing is pending between rounds; this only waits
+            last_round = self.clock()
             owner = {p.flows[r % len(p.flows)]: p for p in reached}
             for flow, _ttl, addr, rtt, ok in self._batch([(f, PING_HOPS) for f in owner]):
                 path = owner[flow]

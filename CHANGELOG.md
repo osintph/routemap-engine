@@ -51,6 +51,15 @@ Keep a Changelog format; this project uses Semantic Versioning.
   silent stretch in `silent` and the hop annotated "answered the final
   full-TTL probe" (as RIPE Atlas sends a last probe with TTL 255). "Not
   reached" now means the target was asked and did not answer.
+- **A path ends at its target's hop.** A hop where only the target answers
+  adds no flows, and a flow silent where other flows of its path reached the
+  target is asked there again (twice at most) and never deeper. A Mac run to
+  heise.de, complete at TTL 15, had gone on to TTL 18 and stopped at the
+  probe cap (1,350 probes, 125 s); the same route now completes in about 450
+  probes.
+- **Target attempts are at least 1 s apart** (`ping_interval`, ping's
+  default interval), so a short stretch of loss at the target cannot take
+  most of the ten. They went out as fast as the target answered before.
 - **The Paths trace text header** names the probe sent ("TCP SYN to port
   443" or "ICMP echo"), the configured hop limit and why the discovery
   ended (`stop_text`: "stopped after 5 silent hops (3 to 7)"). It said "ICMP
