@@ -39,9 +39,12 @@ Keep a Changelog format; this project uses Semantic Versioning.
 - Classifiers for Python 3.11, 3.12 and 3.13.
 - **Anycast destinations are placed.** When the destination answered faster
   than its registered location allows from the origin, it is placed at the
-  largest city the RTT reaches, with the new source `anycast` and the
-  reason "likely anycast, served from near X (registered in Y, N km away,
-  but answered in M ms)" (`geo.place_anycast`). Only the destination: a
+  largest city the RTT reaches, counted from the last placed hop before it
+  with only the RTT added past that hop (from Manila the whole 8 ms reaches
+  Shantou; past a Pasig hop at 7.9 ms it reaches Quezon City). The source is
+  the new `anycast`, the reason "likely anycast, served from near X
+  (registered in Y, N km away, but answered in M ms, D ms past hop H (P))"
+  (`geo.place_anycast`). Only the destination: a
   router that answers too fast keeps "not placed". `analyse(destination=...)`
   and `ProgressiveTrace.destination` name the address traced where the text
   does not (mtr); a traceroute or tracert banner's address is used
