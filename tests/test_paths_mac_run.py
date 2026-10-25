@@ -8,9 +8,7 @@ answers, added flows there and probed each new flow at every earlier hop, and
 ended at the probe cap: 1,350 probes in 125 s, "stopped at the probe cap"."""
 import json
 import pathlib
-import random
 import socket
-import time
 
 import pytest
 
@@ -150,14 +148,17 @@ def test_the_ten_target_attempts_are_a_second_apart_and_every_loss_is_counted():
 
 def test_a_and_aaaa_are_two_lookups_each_with_its_own_time():
     """Finding 3 of the Mac run: both system rows read 53.0 ms. They are two
-    getaddrinfo calls, each timed on its own (here 30 and 90 ms)."""
+    getaddrinfo calls, each timed on its own: with a resolver that takes 30
+    and 90 ms (a virtual clock, so a slow CI runner cannot move it), the rows
+    say 30 and 90."""
+    now = [100.0]
     calls = []
 
     def gai(name, port, family=0, kind=0, *a):
         calls.append(family)
-        time.sleep(0.03 if family == socket.AF_INET else 0.09)
+        now[0] += 0.030 if family == socket.AF_INET else 0.090
         addr = ("192.0.2.1", 0) if family == socket.AF_INET else ("2001:db8::1", 0, 0, 0)
         return [(family, kind, 6, "", addr)]
-    a, aaaa = dnstime.measure("heise.de", getaddrinfo=gai)
+    a, aaaa = dnstime.measure("heise.de", getaddrinfo=gai, clock=lambda: now[0])
     assert calls == [socket.AF_INET, socket.AF_INET6]
-    assert 25 <= a.ms < 80 and 85 <= aaaa.ms < 200 and abs(aaaa.ms - a.ms) > 40, (a.ms, aaaa.ms)
+    assert (round(a.ms, 3), round(aaaa.ms, 3)) == (30.0, 90.0)
