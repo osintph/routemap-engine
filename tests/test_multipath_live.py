@@ -52,7 +52,7 @@ def test_every_flow_stays_on_one_branch_and_flows_spread_over_both(target):
     assert len(set(branch_of.values())) == 2, branch_of
 
 
-@pytest.mark.skipif(not INTERNET, reason="an internet run happens in CI on macOS")
+@pytest.mark.skipif(not INTERNET, reason="a loopback discovery runs in CI on macOS")
 def test_a_real_discovery_stays_inside_its_caps():
     ok, why = multipath.available()
     assert ok, why
