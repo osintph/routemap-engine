@@ -122,3 +122,14 @@ def test_run1_every_path_is_asked_and_hop_11_keeps_frankfurt():
     group = next(g for g in route.paths["per_packet"] if g["hop"] == 11)
     by_addr = {h["address"]: h.get("place") for h in group["located"]}
     assert by_addr.get("62.115.132.229", "").startswith("Frankfurt"), by_addr
+
+
+def test_helpers_read_fixtures_as_utf8_on_every_platform():
+    """Windows CI (PR 15): run 1's fixture holds the CLI's curly quotes, and a
+    helper that read it with the platform default (cp1252) failed there."""
+    import re
+    helpers = pathlib.Path(__file__).parent / "helpers"
+    bare = [f"{p.name}:{n}" for p in sorted(helpers.glob("*.py"))
+            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+            if re.search(r"\.read_text\(\s*\)|open\([^)]*['\"]r['\"]\s*\)", line)]
+    assert not bare, bare

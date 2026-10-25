@@ -38,7 +38,7 @@ UNREACHED: set[str] = set()
 def parse():
     """{letter: {ttl: (address, rtt_ms)}} and {address: printed place} from the table."""
     rows = []
-    for line in FIXTURE.read_text().splitlines():
+    for line in FIXTURE.read_text(encoding="utf-8").splitlines():   # the CLI prints UTF-8 (quotes, middle dots)
         if line.startswith("#") or not ROW.match(line) or line.startswith("Path"):
             continue
         m = ROW.match(line)
