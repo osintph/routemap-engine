@@ -1,16 +1,44 @@
-# Weekly update proposals for the hash locks and every pinned action
-# (hardening 5). Each arrives as a pull request with new versions and hashes,
-# runs the tests, and needs the CLA check like any other; nothing is merged
-# without review. The locks are compiled by requirements/compile.sh.
+# Weekly update proposals, grouped (proposal, 26 Oct 2026). Security updates
+# come at once in one grouped pull request; version updates wait 7 days
+# after a release. httpx and dnspython are the wheel's own requirements, so
+# they come in their own group, which needs an engine release; the rest is
+# CI tooling. The locks are recompiled with requirements/compile.sh.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /requirements
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+      day: monday
+      time: "09:00"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      runtime:
+        applies-to: version-updates
+        patterns: ["httpx", "httpcore", "h11", "anyio", "idna", "certifi", "dnspython", "maxminddb",
+                   "typing-extensions"]
+      tooling:
+        applies-to: version-updates
+        patterns: ["*"]
+        exclude-patterns: ["httpx", "httpcore", "h11", "anyio", "idna", "certifi", "dnspython", "maxminddb",
+                           "typing-extensions"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+      day: monday
+      time: "09:00"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
