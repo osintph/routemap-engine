@@ -50,6 +50,16 @@ Keep a Changelog format; this project uses Semantic Versioning.
   does not (mtr); a traceroute or tracert banner's address is used
   otherwise. bbc.com's Fastly address answered in 5 to 10 ms from Manila,
   is registered in Montreal and was left unplaced.
+- **Hops inferred from their neighbours.** A hop no source places (no
+  hostname rule, no database place the RTT allows), between two hops placed
+  by a source within 50 km of each other, is placed there with the new
+  source `neighbours` and a reason starting "inferred from neighbours"
+  (`geo.place_by_neighbours`). Its own RTT must allow the place; a router
+  that answers at several hops in a row is judged as one; an inferred hop
+  is never a neighbour for another; and, one router one place, the place
+  carries to the router's other rows in the run. 62.115.153.153
+  (plusline-ic, Arelion's link to Plus.line, no site code, DB-IP's Chicago
+  ruled out) is now placed in Frankfurt between two Frankfurt hops.
 
 ### Changed
 
@@ -103,6 +113,10 @@ Keep a Changelog format; this project uses Semantic Versioning.
   and their hop's main row has several routers, so nothing placed them
   (62.115.132.229 at hop 11 of the 12 Oct ODIN run, placed in Frankfurt by
   every earlier run). Each is now placed on its own (`paths.per_packet`).
+- **The schema knows the Paths full-TTL annotation.** "answered the final
+  full-TTL probe" was missing from `route.schema.json` (it listed only
+  Atlas's "answered the final TTL 255 probe"), so a Paths export with a
+  full-TTL answer did not validate.
 - **A row placed by a hostname shows that hostname's router.** At a hop
   several routers answered, the row kept the hop's first address whatever
   name placed it, so it could read "62.115.153.153, ffm-b16-link" (another

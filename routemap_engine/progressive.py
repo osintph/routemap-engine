@@ -155,6 +155,7 @@ class ProgressiveTrace:
         # one-shot analysis of its text ends.
         geo.place_anycast(geo.annotate(geo.neighbour_check(located)), self.origin,
                           self.destination or geo.destination_of(self.parsed.target))
+        geo.place_by_neighbours(located, self.origin)
         return Route(parser=self.parsed.parser,
                      parser_label=PARSER_LABELS.get(self.parsed.parser, self.parsed.parser),
                      target=self.parsed.target, warnings=list(self.parsed.warnings),

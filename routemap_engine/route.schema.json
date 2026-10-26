@@ -134,7 +134,8 @@
             "hoiho",
             "site-code",
             "ip-db",
-            "anycast"
+            "anycast",
+            "neighbours"
           ]
         },
         "accepted": {
@@ -300,6 +301,7 @@
             "site-code",
             "ip-db",
             "anycast",
+            "neighbours",
             "local",
             "unresolved"
           ]
@@ -343,7 +345,8 @@
               "likely asymmetric return path",
               "ICMP rate limiting, not real loss",
               "destination or path does not answer ICMP",
-              "answered the final TTL 255 probe"
+              "answered the final TTL 255 probe",
+              "answered the final full-TTL probe"
             ]
           }
         },
@@ -481,6 +484,7 @@
             "site-code",
             "ip-db",
             "anycast",
+            "neighbours",
             "local",
             "unresolved"
           ]

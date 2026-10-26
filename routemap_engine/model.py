@@ -196,6 +196,7 @@ async def analyse(trace, origin: tuple[float, float] | None = None, *,
                                  slack_km=origin_slack_km)
     located = geo.place_anycast(resolved["hops"], origin, destination or geo.destination_of(parsed.target))
     one_place_per_address(located, [], _named(parsed.hops))
+    geo.share_inferred(geo.place_by_neighbours(located, origin), origin)
     return Route(
         parser=parsed.parser,
         parser_label=PARSER_LABELS.get(parsed.parser, parsed.parser),
@@ -333,6 +334,11 @@ async def analyse_paths(discovery, origin: tuple[float, float] | None = None, *,
         out["per_packet"].append({"hop": ttl, "located": group})
     one_place_per_address(located, [entry["located"] for entry in out["paths"]]
                           + [g["located"] for g in out["per_packet"]], dict(names))
+    every = [located] + [entry["located"] for entry in out["paths"]]
+    for rows in every:
+        geo.place_by_neighbours(rows, origin)
+    geo.share_inferred([h for rows in every for h in rows] + [h for g in out["per_packet"] for h in g["located"]],
+                       origin)
     if discovery.final_hop is not None:
         _mark_final_probe(located, [entry["located"] for entry in out["paths"]], discovery.final_hop)
     label = PARSER_LABELS.get(parsed.parser, parsed.parser)
