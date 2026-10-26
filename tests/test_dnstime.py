@@ -52,9 +52,20 @@ class _Server:
                 out = reply(self.request.recv(n), True)
                 self.request.sendall(struct.pack("!H", len(out)) + out)
 
-        self.udp = socketserver.ThreadingUDPServer(("127.0.0.1", 0), Udp)
-        self.port = self.udp.server_address[1]
-        self.tcp = socketserver.ThreadingTCPServer(("127.0.0.1", self.port), Tcp)
+        # TCP binds port 0 and keeps the port the OS assigns, so it is never in
+        # TCP's reserved range (Windows reserves different ranges for TCP and
+        # UDP). UDP takes the same number, as the engine's TC fallback asks
+        # the same port over TCP; a refused UDP bind picks a new pair.
+        for attempt in range(20):
+            self.tcp = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Tcp)
+            self.port = self.tcp.server_address[1]
+            try:
+                self.udp = socketserver.ThreadingUDPServer(("127.0.0.1", self.port), Udp)
+                break
+            except OSError:
+                self.tcp.server_close()
+                if attempt == 19:
+                    raise
         for srv in (self.udp, self.tcp):
             threading.Thread(target=srv.serve_forever, daemon=True).start()
 
@@ -173,3 +184,32 @@ def test_the_target_never_appears_in_a_log_line(caplog, server):
     caplog.set_level(logging.DEBUG, logger="routemap_engine")
     dnstime.measure("secret-target.example", ["127.0.0.1"], getaddrinfo=GAI, port=server.port)
     assert caplog.records and "secret-target" not in caplog.text
+
+
+@pytest.mark.parametrize("refused", ["tcp", "udp"])
+def test_the_test_server_comes_up_when_a_bind_to_a_fixed_port_is_refused(monkeypatch, refused):
+    """Engine CI, 26 Oct 2026: on Windows the TCP bind to the port the OS had
+    given UDP raised WinError 10013, as TCP and UDP have different reserved
+    ranges. Whichever protocol binds the fixed port second, a refusal there
+    must not fail the fixture."""
+    refusals = []
+
+    def refusing(base, proto):
+        class Refusing(base):
+            def server_bind(self):
+                if proto == refused and self.server_address[1] != 0 and not refusals:
+                    refusals.append(self.server_address[1])
+                    raise PermissionError(10013, "forbidden by its access permissions")
+                super().server_bind()
+        return Refusing
+
+    monkeypatch.setattr(socketserver, "ThreadingTCPServer", refusing(socketserver.ThreadingTCPServer, "tcp"))
+    monkeypatch.setattr(socketserver, "ThreadingUDPServer", refusing(socketserver.ThreadingUDPServer, "udp"))
+    srv = _Server()
+    try:
+        assert srv.udp.server_address[1] == srv.tcp.server_address[1] == srv.port
+        assert bool(refusals) == (refused == "udp")  # only UDP ever binds a fixed port
+        rows = dnstime.measure("bbc.com", ["127.0.0.1"], getaddrinfo=GAI, port=srv.port)
+        assert [r.rcode for r in rows if r.resolver == "127.0.0.1"] == ["NOERROR", "NOERROR"]
+    finally:
+        srv.close()
