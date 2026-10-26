@@ -125,16 +125,25 @@ jobs:
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
       - name: A reserved TCP port range (Windows; as Hyper-V, WSL 2 or Docker reserve them)
         # The 0.8.0 prober bound fixed ports from 40000 on, and Windows refuses
-        # a bind inside a reserved range (engine CI, 26 Oct 2026). This
-        # reserves one below the dynamic range for this runner only (active
-        # store, gone at reboot); tests/test_tcp_reserved_live.py uses it.
+        # a bind inside a reserved range (engine CI, 26 Oct 2026). This prints
+        # the runner's own reserved ranges, then reserves the first free block
+        # of 1000 ports from 40000 for this runner only (active store, gone at
+        # reboot; a block with a port in use is refused by netsh, so the next
+        # is tried). tests/test_tcp_reserved_live.py uses it.
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          netsh int ipv4 add excludedportrange protocol=tcp startport=40000 numberofports=9152 store=active
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          netsh int ipv4 show dynamicport tcp
           netsh int ipv4 show excludedportrange protocol=tcp
-          "ROUTEMAP_RESERVED_PORTS=40000-49151" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $reserved = $null
+          foreach ($first in 40000, 41000, 42000, 43000, 44000, 45000, 46000, 47000, 48000) {
+            netsh int ipv4 add excludedportrange protocol=tcp startport=$first numberofports=1000 store=active
+            if ($LASTEXITCODE -eq 0) { $reserved = "$first-$($first + 999)"; break }
+          }
+          if (-not $reserved) { Write-Error "no free block of 1000 ports from 40000 to 48999"; exit 1 }
+          netsh int ipv4 show excludedportrange protocol=tcp
+          "ROUTEMAP_RESERVED_PORTS=$reserved" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $global:LASTEXITCODE = 0
       - name: TCP prober diagnostics (Windows; prints, asserts nothing)
         if: runner.os == 'Windows'
         continue-on-error: true
