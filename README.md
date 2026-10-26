@@ -106,7 +106,13 @@ multipath.discover("example.com", address=resolved.address)
   Atlas's default), then ask the target at full TTL on every path, so "not
   reached" means the target was asked and did not answer. Over TCP (Windows)
   one ICMP echo per silent hop tells a network that does not answer TCP
-  probes (`tcp_silent_from`) from routers that answer nothing.
+  probes (`tcp_silent_from`) from routers that answer nothing. Each TCP
+  flow's source port is the system's (a bind to port 0), kept for the flow,
+  so Windows' reserved port ranges are never asked for; a flow whose kept
+  port is refused later gets one new port and starts over
+  (`flows_restarted`). A probe that never leaves this computer is counted in
+  `local_failures`, with its error name and code in `local_failure_reasons`
+  (`{"WSAEACCES 10013": 3}`).
 - **Remote agents** (`agent`): `routemap-engine agent 1 hello|trace|paths|ports`
   runs one measurement on the machine it is started on and prints JSON
   lines. Route Map runs it on a server over the user's own SSH access, one

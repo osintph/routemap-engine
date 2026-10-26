@@ -119,6 +119,17 @@ class Net:
         self.home_counter = 0
         self.connected_at: dict[int, float] = {}
         self.refused_reuse = 0
+        self.next_port = 49152                    # what the system hands out for a bind to port 0
+
+    def flow(self, sock):
+        """The flow a simulated socket belongs to: by the port the transport
+        kept for it (0.8.1), or by its fixed port (0.8.0 and earlier)."""
+        flow_of = getattr(self.transport, "flow_of", None)
+        return flow_of(sock.bound[1]) if flow_of else sock.bound[1] - self.transport._base
+
+    def refuse_bind(self, addr) -> OSError | None:
+        """The error a bind to *addr* fails with, or None: none here."""
+        return None
 
     def socket(self, family, kind):
         return _Sock(self)
@@ -134,7 +145,7 @@ class Net:
         return [], [s for s in due if s.ready_at <= self.clock.t], []
 
     def answer(self, sock):
-        flow = sock.bound[1] - self.transport._base
+        flow = self.flow(sock)
         hops = PATHS[letter_of(flow)]
         end = max(hops)
         now = self.clock.t
@@ -184,7 +195,15 @@ class _Sock:
             self.ttl = value
 
     def bind(self, addr):
+        refused = self.net.refuse_bind(addr)
+        if refused is not None:
+            raise refused
+        if addr[1] == 0:
+            addr, self.net.next_port = (addr[0], self.net.next_port), self.net.next_port + 1
         self.bound = addr
+
+    def getsockname(self):
+        return self.bound
 
     def setblocking(self, flag):
         pass

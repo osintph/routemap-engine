@@ -33,7 +33,7 @@ class SilentNet(odin_net.Net):
 
     def answer(self, sock):
         now = self.clock.t
-        flow = sock.bound[1] - self.transport._base
+        flow = self.flow(sock)
         if sock.ttl >= self.target_hop:
             if not self.target_answers:
                 return
