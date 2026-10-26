@@ -124,9 +124,9 @@ jobs:
           echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
       - name: A reserved TCP port range (Windows; as Hyper-V, WSL 2 or Docker reserve them)
-        # The 0.8.0 prober bound fixed ports from 40000 on, and Windows refuses
-        # a bind inside a reserved range (engine CI, 26 Oct 2026). This prints
-        # the runner's own reserved ranges, then reserves the first free block
+        # The 0.8.0 prober bound fixed ports from 40000 on, and Windows refused
+        # some (engine CI, 26 Oct 2026). This prints the runner's dynamic range,
+        # its reserved ranges and the ports in use there, then reserves the first free block
         # of 1000 ports from 40000 for this runner only (active store, gone at
         # reboot; a block with a port in use is refused by netsh, so the next
         # is tried). tests/test_tcp_reserved_live.py uses it.
@@ -135,6 +135,10 @@ jobs:
         run: |
           netsh int ipv4 show dynamicport tcp
           netsh int ipv4 show excludedportrange protocol=tcp
+          # How many of the ports 0.8.0 could fix a flow to (40000 to 50009) other
+          # programs hold right now, by state.
+          Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -ge 40000 -and $_.LocalPort -le 50009 } |
+            Group-Object State | Select-Object Name, Count | Format-Table -AutoSize | Out-String | Write-Output
           $reserved = $null
           foreach ($first in 40000, 41000, 42000, 43000, 44000, 45000, 46000, 47000, 48000) {
             netsh int ipv4 add excludedportrange protocol=tcp startport=$first numberofports=1000 store=active
