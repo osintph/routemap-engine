@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.8.0] - 2026-10-26
 
+Published 2026-10-26 to PyPI and GitHub Releases.
+
 ### Added
 
 - **DNS response timing** (`routemap_engine.dnstime`): the target's A and
