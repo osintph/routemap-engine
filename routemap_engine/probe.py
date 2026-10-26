@@ -563,8 +563,8 @@ TCP_REUSE_GAP = 1.5
 
 # Names for the Windows socket errors a probe socket can meet, so a probe that
 # never left says why (a Paths result's local_failure_reasons). Windows
-# refuses a bind to a port in a reserved range (Hyper-V, WSL 2, Docker, netsh
-# int ipv4 add excludedportrange) with WSAEACCES: engine CI, 26 Oct 2026.
+# refuses an SO_REUSEADDR bind to a port another socket holds with exclusive
+# use with WSAEACCES (engine CI, run 40299533796, 26 Oct 2026).
 WINSOCK_ERRORS = {10013: "WSAEACCES", 10048: "WSAEADDRINUSE", 10049: "WSAEADDRNOTAVAIL",
                   10050: "WSAENETDOWN", 10051: "WSAENETUNREACH", 10055: "WSAENOBUFS",
                   10065: "WSAEHOSTUNREACH"}
@@ -610,8 +610,9 @@ class TcpFlowTransport:
 
     A flow's source port is the system's: its first probe binds port 0 and
     the flow keeps the port it got. Up to 0.8.0 each flow had a fixed port
-    from 40000, and Windows refuses ports in its reserved ranges (WSAEACCES,
-    engine CI, 26 Oct 2026); the system never hands those out. A kept port
+    from 40000 to 50009, and Windows refused one that another program held
+    (WSAEACCES; 69 of those ports were held on a CI runner, 26 Oct 2026); the
+    system only hands out a port nothing holds. A kept port
     refused later (another program took it) is replaced once, and the
     discoverer starts that flow over (:meth:`take_reassigned`).
 

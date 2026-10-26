@@ -1,9 +1,9 @@
-"""Windows reserves TCP port ranges (Hyper-V, WSL 2, Docker Desktop, or an
-administrator's netsh int ipv4 add excludedportrange), and a bind to a port
-in one fails with WSAEACCES (10013). Up to 0.8.0 each Windows probe flow had
-a fixed source port, 40000 plus a random base plus the flow, and the engine
-CI's Windows runners refused such a port in 6 runs from 11 to 26 Oct 2026
-("local failures 12" of 12, the error discarded).
+"""Up to 0.8.0 each Windows probe flow had a fixed source port, 40000 plus a
+random base plus the flow, and the engine CI's Windows runners refused such
+a port in 6 runs from 11 to 26 Oct 2026 ("local failures 12" of 12, the
+error discarded). Windows refuses a bind to a port another program holds
+with exclusive use (WSAEACCES 10013, tests/test_tcp_reserved_live.py), and
+69 of those ports were held on a CI runner (run 40299533796).
 
 Now a flow's port is the system's (a bind to port 0), kept for the flow's
 later probes; a kept port refused later (another program took it) is
@@ -16,16 +16,17 @@ import pytest
 from helpers import odin_net
 from routemap_engine import multipath, probe
 
-RESERVED = range(40000, 51000)            # every port 0.8.0 could pick, and more
+REFUSED = range(40000, 51000)             # every port 0.8.0 could pick, and more
 
 
 def _refused():
     return PermissionError(10013, "An attempt was made to access a socket in a way forbidden by its access permissions")
 
 
-class ReservedNet(odin_net.Net):
-    """The replayed ODIN network on a computer whose reserved TCP ranges cover
-    every fixed port; the system hands out ports outside them."""
+class RefusingNet(odin_net.Net):
+    """The replayed ODIN network on a computer that refuses every port 0.8.0
+    could fix a flow to (held by other programs); the system hands out
+    ports outside them."""
 
     def __init__(self):
         super().__init__()
@@ -34,7 +35,7 @@ class ReservedNet(odin_net.Net):
 
     def refuse_bind(self, addr):
         self.binds.append(addr[1])
-        return _refused() if addr[1] in RESERVED else None
+        return _refused() if addr[1] in REFUSED else None
 
 
 class StolenNet(odin_net.Net):
@@ -63,17 +64,17 @@ def _discover(net):
                                 deadline=net.clock() + 3600).run()
 
 
-def test_paths_on_a_computer_that_reserves_every_fixed_port_finds_the_paths():
+def test_paths_on_a_computer_that_refuses_every_fixed_port_finds_the_paths():
     clean = _discover(odin_net.Net())
-    net = ReservedNet()
+    net = RefusingNet()
     d = _discover(net)
     assert d.local_failures == 0 and d.stopped_by == clean.stopped_by != "local_error"
     assert [p.hops for p in d.paths] == [p.hops for p in clean.paths]
-    assert net.binds and not any(port in RESERVED for port in net.binds)
+    assert net.binds and not any(port in REFUSED for port in net.binds)
 
 
 def test_a_probe_that_never_leaves_says_why_by_error_name_and_code():
-    class Refusing(ReservedNet):
+    class Refusing(RefusingNet):
         def refuse_bind(self, addr):
             return _refused()                      # every port, the system's too
     d = _discover(Refusing())
@@ -89,7 +90,7 @@ def test_a_probe_that_never_leaves_says_why_by_error_name_and_code():
 
 
 def test_a_flow_keeps_the_port_the_system_gave_it():
-    net = ReservedNet()
+    net = RefusingNet()
     t = net.make_transport()
     seen = []
     for seq, ttl in enumerate((1, 2, 3)):
@@ -97,7 +98,7 @@ def test_a_flow_keeps_the_port_the_system_gave_it():
         sock = t._open[seq + 1][0]
         seen.append(sock.bound[1])
         t.forget(seq + 1)
-    assert seen[0] == t.sport(4) and seen == [seen[0]] * 3 and seen[0] not in RESERVED
+    assert seen[0] == t.sport(4) and seen == [seen[0]] * 3 and seen[0] not in REFUSED
     assert t.flow_of(seen[0]) == 4
 
 

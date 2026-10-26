@@ -52,9 +52,9 @@ class _Server:
                 out = reply(self.request.recv(n), True)
                 self.request.sendall(struct.pack("!H", len(out)) + out)
 
-        # TCP binds port 0 and keeps the port the OS assigns, so it is never in
-        # TCP's reserved range (Windows reserves different ranges for TCP and
-        # UDP). UDP takes the same number, as the engine's TC fallback asks
+        # TCP binds port 0 and keeps the port the OS assigns, so it is never a
+        # TCP port another program holds (the number the OS gave a UDP socket
+        # can be). UDP takes the same number, as the engine's TC fallback asks
         # the same port over TCP; a refused UDP bind picks a new pair.
         for attempt in range(20):
             self.tcp = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Tcp)
@@ -189,8 +189,8 @@ def test_the_target_never_appears_in_a_log_line(caplog, server):
 @pytest.mark.parametrize("refused", ["tcp", "udp"])
 def test_the_test_server_comes_up_when_a_bind_to_a_fixed_port_is_refused(monkeypatch, refused):
     """Engine CI, 26 Oct 2026: on Windows the TCP bind to the port the OS had
-    given UDP raised WinError 10013, as TCP and UDP have different reserved
-    ranges. Whichever protocol binds the fixed port second, a refusal there
+    given UDP raised WinError 10013: a TCP socket held that number. Whichever
+    protocol binds the fixed port second, a refusal there
     must not fail the fixture."""
     refusals = []
 

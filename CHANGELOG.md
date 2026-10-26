@@ -6,16 +6,18 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ### Fixed
 
-- **Paths on Windows with reserved TCP ports.** Each flow of the Windows
-  TCP prober had a fixed source port, 40000 plus a random base plus the
-  flow, and Windows refuses a bind inside a reserved port range (reserved by
-  Hyper-V, WSL 2, Docker Desktop or `netsh int ipv4 add excludedportrange`)
-  with WSAEACCES (10013). Such a flow never sent a probe, its paths were
-  missing, and 20 refusals in a row ended the run with "this computer
+- **Paths on Windows when a probe's port is taken.** Each flow of the
+  Windows TCP prober had a fixed source port, 40000 plus a random base plus
+  the flow (40000 to 50009), and Windows refuses a bind to a port another
+  program holds with exclusive use, with WSAEACCES (10013); 69 of those
+  ports were held on a CI runner. Such a flow never sent a probe, its paths
+  were missing, and 20 refusals in a row ended the run with "this computer
   refused to send probes". A flow's port is now the system's (a bind to
   port 0), kept for its later probes; a kept port refused later (another
   program took it) is replaced once and the flow is probed again from
-  TTL 1, so no path mixes the answers of two source ports.
+  TTL 1, so no path mixes the answers of two source ports. A port range
+  reserved with `netsh int ipv4 add excludedportrange` was not the cause: a
+  bind inside one was not refused.
 - **A probe that never leaves says why.** `Discovery.local_failure_reasons`
   counts those probes by error name and code (`{"WSAEACCES 10013": 20}`; no
   address or port), the stop text names the commonest ("stopped: this
@@ -23,7 +25,7 @@ Keep a Changelog format; this project uses Semantic Versioning.
   `flows_restarted` counts the flows started over. Both are in the JSON
   schema and in a remote agent's answer. The error was discarded before.
 - The DNS timing tests' local server binds TCP to a port the system assigns
-  (it could land in a range Windows reserves for TCP only).
+  (the number the system gave its UDP socket could be held over TCP).
 
 ### Changed
 
@@ -36,9 +38,11 @@ Keep a Changelog format; this project uses Semantic Versioning.
   in the release, test and SBOM locks; actions/upload-artifact 7.0.2 and
   download-artifact 8.0.2, pinned by commit. The wheel's own requirements
   are unchanged.
-- Windows CI reserves a TCP port range below the dynamic range and checks
-  that a bind inside it fails with WSAEACCES and that Paths sends every
-  probe and reaches the target with it in place.
+- Windows CI prints the runner's reserved ranges and the ports in use
+  where 0.8.0 fixed its flows, checks that a port held with exclusive use
+  refuses a bind with WSAEACCES, reserves a range and checks the system
+  never hands out a port in it, and runs Paths with it in place: every
+  probe sent, the target reached.
 
 ## [0.8.0] - 2026-10-26
 
