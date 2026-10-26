@@ -62,6 +62,9 @@ diff.diff_routes(old_route, new_route)["summary"]
   ...". Pass `destination=` to `analyse` (or set
   `ProgressiveTrace.destination`) when the trace text names no address, as
   mtr's does not.
+- **Inferred from neighbours**: a hop no source places, between two placed
+  hops in one city, is placed in that city with source `neighbours` (an
+  inference, not an answer about the router).
 - **RIPEstat client**: prefix, RIR, RPKI, RIS paths and visibility, BGP
   updates, AS overview and neighbours, abuse contacts; `ripe.ris_agreement`
   compares the trace's AS path with what RIS sees.
