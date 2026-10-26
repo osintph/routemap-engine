@@ -9,6 +9,8 @@ Public, AGPL-3.0. FalconEye and the Route Map desktop app depend on it.
 - Run `TZ='Asia/Manila' date` before any date in CHANGELOG or release notes.
 - Releases: bump `routemap_engine/__about__.py`, CHANGELOG entry, annotated tag
   `vX.Y.Z`; the release workflow publishes to PyPI by trusted publishing.
+- Release titles are the annotated tag's message (the release workflow sets
+  them from it, e.g. "routemap-engine 0.8.0").
 
 ## Standing orders (all my repos)
 
