@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.8.1] - 2026-10-26
 
+Published 2026-10-26 to PyPI and GitHub Releases.
+
 ### Fixed
 
 - **Paths on Windows when a probe's port is taken.** Each flow of the
