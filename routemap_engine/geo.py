@@ -110,6 +110,11 @@ SOURCE_UNRESOLVED = "unresolved"
 # it is served from somewhere near the origin (anycast), placed at the largest
 # city the RTT reaches. An inference, said as one ("likely anycast").
 SOURCE_ANYCAST = "anycast"
+# A hop no source placed, between two placed hops in one city: put in that
+# city, and said to be inferred (drawn hollow). An inference from the path,
+# not a source's answer about the router.
+SOURCE_NEIGHBOURS = "neighbours"
+NEIGHBOURS_SAME_CITY_KM = 50.0
 
 # Set on a hop placed only to country level (the IP database had no city).
 # Absent on every other hop.
@@ -666,6 +671,85 @@ def place_anycast(located: list[dict], origin: tuple[float, float] | None,
                       "reason": why})
         entry["annotations"] = [a for a in entry.get("annotations") or [] if a != ANNOT_RTT_IMPOSSIBLE]
     return located
+
+
+def place_by_neighbours(located: list[dict], origin: tuple[float, float] | None) -> list[dict]:
+    """Place a hop no source could place when the hops either side of it are
+    placed in one city: the packet went from that city to that city, so the
+    router in between is very likely there too (ODIN, heise.de, 26 Oct 2026:
+    62.115.153.153, Arelion's link to Plus.line, named with no site code and
+    put in Chicago by DB-IP, which the RTT rules out, between two Frankfurt
+    hops). Its own RTT must allow the place. Only answered public hops;
+    neighbours placed by a source at city level, never by this rule or as
+    anycast. Edits the rows in place."""
+    placed_by = (SOURCE_HOIHO, SOURCE_SITE_CODE, SOURCE_IP_DB)
+
+    def answered(e):
+        return e.get("min_rtt_ms") is not None and (e.get("address") or e.get("addresses"))
+
+    def usable(e):
+        return (e is not None and e.get("source") in placed_by and e.get("lat") is not None
+                and e.get("precision") != PRECISION_COUNTRY)
+    for index, entry in enumerate(located):
+        if entry.get("source") != SOURCE_UNRESOLVED or not answered(entry):
+            continue
+        addrs = entry.get("addresses") or [entry.get("address")]
+        if not any(a and classify_address(a) == "public" for a in addrs):
+            continue
+        # A router that answered at several hops in a row is one run: its
+        # neighbours are the first hops either side with another address.
+        prev = next((e for e in reversed(located[:index]) if answered(e) and e.get("address") != entry.get("address")),
+                    None)
+        nxt = next((e for e in located[index + 1:] if answered(e) and e.get("address") != entry.get("address")), None)
+        if not (usable(prev) and usable(nxt)):
+            continue
+        if haversine_km(prev["lat"], prev["lon"], nxt["lat"], nxt["lon"]) > NEIGHBOURS_SAME_CITY_KM:
+            continue
+        at = prev if prev["source"] in (SOURCE_HOIHO, SOURCE_SITE_CODE) or \
+            nxt["source"] not in (SOURCE_HOIHO, SOURCE_SITE_CODE) else nxt
+        allowed, distance, budget = rtt_allows(origin, at["lat"], at["lon"], entry["min_rtt_ms"])
+        if not allowed:
+            continue
+        ruled_out = next((c for c in entry.get("candidates") or []
+                          if c.get("source") == SOURCE_IP_DB and not c.get("accepted") and c.get("place")), None)
+        why = (f"inferred from neighbours: between hop {prev['hop']} ({prev.get('place')}) and hop "
+               f"{nxt['hop']} ({nxt.get('place')})"
+               + (f"; the IP database's {ruled_out['place']} is ruled out" if ruled_out else "")
+               + "; no source places it")
+        if "candidates" in entry:
+            entry["candidates"].append({"source": SOURCE_NEIGHBOURS, "place": at.get("place"), "lat": at["lat"],
+                                        "lon": at["lon"], "distance_km": distance, "rtt_budget_km": budget,
+                                        "accepted": True})
+        entry.update({"source": SOURCE_NEIGHBOURS, "lat": at["lat"], "lon": at["lon"], "place": at.get("place"),
+                      "cc": at.get("cc"), "reason": why})
+        if "distance_km" in entry:
+            entry["distance_km"], entry["rtt_budget_km"] = distance, budget
+        if "annotations" in entry:
+            entry["annotations"] = [a for a in entry["annotations"] if a != ANNOT_RTT_IMPOSSIBLE]
+    return located
+
+
+def share_inferred(rows: list[dict], origin: tuple[float, float] | None) -> None:
+    """One address, one place: a router placed from its neighbours on one row
+    is placed there on every row it is unplaced on, where that row's RTT
+    allows it (ODIN path K reaches 62.115.153.153 from Copenhagen across a
+    silent hop; the router is the one other paths put in Frankfurt)."""
+    inferred = {}
+    for e in rows:
+        if e.get("source") == SOURCE_NEIGHBOURS and e.get("address"):
+            inferred.setdefault(e["address"], e)
+    for e in rows:
+        src = inferred.get(e.get("address"))
+        if src is None or e is src or e.get("source") != SOURCE_UNRESOLVED or e.get("min_rtt_ms") is None:
+            continue
+        allowed, distance, budget = rtt_allows(origin, src["lat"], src["lon"], e["min_rtt_ms"])
+        if not allowed:
+            continue
+        e.update({k: src.get(k) for k in ("source", "lat", "lon", "place", "cc", "reason")})
+        if "distance_km" in e:
+            e["distance_km"], e["rtt_budget_km"] = distance, budget
+        if "annotations" in e:
+            e["annotations"] = [a for a in e["annotations"] if a != ANNOT_RTT_IMPOSSIBLE]
 
 
 def destination_of(target: str | None) -> str | None:

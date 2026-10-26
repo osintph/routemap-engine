@@ -41,8 +41,11 @@ def test_a_hop_its_next_neighbour_rules_out_is_not_placed():
     slowly hop 12 itself answered (281 ms)."""
     route = _route()
     hop = next(h for h in route.hops if h["hop"] == 12)
-    assert hop["place"] is None and ANNOT_RTT_IMPOSSIBLE in hop["annotations"], hop
-    assert "hop 13" in (hop.get("reason") or ""), hop.get("reason")
+    chicago = [c for c in hop["candidates"] if c["source"] == "ip-db"]
+    assert chicago and not any(c["accepted"] for c in chicago), hop
+    assert any(ANNOT_RTT_IMPOSSIBLE in (c.get("why") or "") and "hop 13" in c["why"] for c in chicago)
+    # 0.8.0: between two Frankfurt hops, it is placed there as inferred.
+    assert hop["source"] == "neighbours" and hop["place"].startswith("Frankfurt"), hop
 
 
 def test_the_countries_do_not_go_to_the_us_and_back():
