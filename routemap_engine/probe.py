@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import errno
 import ipaddress
+import logging
 import os
 import secrets
 import socket
@@ -73,6 +74,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+
+log = logging.getLogger("routemap_engine.probe")
 
 MAX_HOPS = 30
 QUERIES = 3
@@ -558,6 +561,23 @@ WSAEWOULDBLOCK, WSAECONNREFUSED, WSAEHOSTUNREACH = 10035, 10061, 10065
 # path, and with SYN retransmissions off nothing tries it again.
 TCP_REUSE_GAP = 1.5
 
+# Names for the Windows socket errors a probe socket can meet, so a probe that
+# never left says why (a Paths result's local_failure_reasons). Windows
+# refuses a bind to a port in a reserved range (Hyper-V, WSL 2, Docker, netsh
+# int ipv4 add excludedportrange) with WSAEACCES: engine CI, 26 Oct 2026.
+WINSOCK_ERRORS = {10013: "WSAEACCES", 10048: "WSAEADDRINUSE", 10049: "WSAEADDRNOTAVAIL",
+                  10050: "WSAENETDOWN", 10051: "WSAENETUNREACH", 10055: "WSAENOBUFS",
+                  10065: "WSAEHOSTUNREACH"}
+
+
+def error_reason(exc: OSError) -> str:
+    """An OS error as its name and code, "WSAEACCES 10013" or "EACCES 13";
+    never its message, which can carry an address."""
+    code = getattr(exc, "winerror", None) or exc.errno
+    if not code:
+        return type(exc).__name__
+    return f"{WINSOCK_ERRORS.get(code) or errno.errorcode.get(code, 'error')} {code}"
+
 
 def parse_icmp_error_info(raw: bytes) -> tuple[str | None, int | None, int | None]:
     """(router address, ICMP type, ICMP code) from an ICMP_ERROR_INFO: a
@@ -588,6 +608,13 @@ class TcpFlowTransport:
     Windows 11 network (build 26200, 11 Oct 2026): 12 hops answered, and two
     source ports split at a per-flow balancer at hop 5.
 
+    A flow's source port is the system's: its first probe binds port 0 and
+    the flow keeps the port it got. Up to 0.8.0 each flow had a fixed port
+    from 40000, and Windows refuses ports in its reserved ranges (WSAEACCES,
+    engine CI, 26 Oct 2026); the system never hands those out. A kept port
+    refused later (another program took it) is replaced once, and the
+    discoverer starts that flow over (:meth:`take_reassigned`).
+
     Probes and paths found over TCP can differ from ICMP ones: balancers
     spread TCP by its ports, and some routers answer TCP probes from
     another interface. Every result carries its method ("tcp-paris")."""
@@ -610,7 +637,10 @@ class TcpFlowTransport:
         self._clock = clock
         self._select = select or _select.select
         self._expire = expire_after
-        self._base = 40000 + secrets.randbelow(10000)
+        self._ports: dict[int, int] = {}        # flow -> its source port, the system's
+        self._replaced: set[int] = set()         # flows whose kept port was replaced (once each)
+        self._reassigned: list[int] = []         # replaced flows the discoverer has not taken yet
+        self.failure_reasons: dict[str, int] = {}   # "WSAEACCES 10013" -> probes that never left
         self._open: dict[int, tuple] = {}        # seq -> (socket, flow, sent at)
         self._kept: list[FlowAnswer] = []        # answers read while a flow was freed
         self._sleep = sleep
@@ -620,8 +650,18 @@ class TcpFlowTransport:
         self.retransmit_option_refused = 0
         self._no_retransmit = no_retransmit or no_syn_retransmissions
 
-    def sport(self, flow: int) -> int:
-        return self._base + flow
+    def sport(self, flow: int) -> int | None:
+        """The source port *flow* keeps; None before its first probe."""
+        return self._ports.get(flow)
+
+    def flow_of(self, port: int) -> int | None:
+        return next((f for f, p in self._ports.items() if p == port), None)
+
+    def take_reassigned(self) -> list[int]:
+        """Flows given a new port since the last call: their earlier answers
+        came from another five-tuple, so the discoverer starts them over."""
+        out, self._reassigned = self._reassigned, []
+        return out
 
     def ready_at(self, flow: int) -> float:
         """When *flow* may probe again: :data:`TCP_REUSE_GAP` after it last
@@ -643,10 +683,24 @@ class TcpFlowTransport:
         for old in [s for s, (_sock, f, _t) in self._open.items() if f == flow]:
             self.forget(old)
         v6 = self.af == 6
-        sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
+        while True:
+            kept = self._ports.get(flow)
+            sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((self.src, kept or 0))
+                if kept is None:
+                    self._ports[flow] = sock.getsockname()[1]
+                break
+            except OSError as exc:
+                self._drop(sock)
+                if kept is None or flow in self._replaced:
+                    return self._failed(exc)
+                log.info("event=probe_port_replaced reason=%s", error_reason(exc))
+                del self._ports[flow]
+                self._replaced.add(flow)
+                self._reassigned.append(flow)
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind((self.src, self.sport(flow)))
             if v6:
                 sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_UNICAST_HOPS, ttl)
             else:
@@ -659,12 +713,18 @@ class TcpFlowTransport:
             started = sock.connect_ex((self.dst, self.port))
             if started not in (0, WSAEWOULDBLOCK, errno.EINPROGRESS, errno.EWOULDBLOCK):
                 raise OSError(started, "connect refused locally")
-        except OSError:
+        except OSError as exc:
             self._drop(sock)
-            self.local_failures += 1
-            return False
+            return self._failed(exc)
         self._open[seq] = (sock, flow, self._clock())
         return True
+
+    def _failed(self, exc: OSError) -> bool:
+        """A probe that never left this machine: counted, with its reason."""
+        self.local_failures += 1
+        reason = error_reason(exc)
+        self.failure_reasons[reason] = self.failure_reasons.get(reason, 0) + 1
+        return False
 
     def _tcp_options(self) -> tuple[tuple[int, int], ...]:
         """Windows: one SYN, and a router's ICMP error fails the connect.

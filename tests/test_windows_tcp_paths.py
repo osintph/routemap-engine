@@ -49,8 +49,15 @@ class FakeSock:
     def setsockopt(self, level, name, value):
         self.opts.append((level, name, value))
 
+    next_port = 49152
+
     def bind(self, addr):
+        if addr[1] == 0:
+            addr, FakeSock.next_port = (addr[0], FakeSock.next_port), FakeSock.next_port + 1
         self.bound = addr
+
+    def getsockname(self):
+        return self.bound
 
     def setblocking(self, flag):
         pass

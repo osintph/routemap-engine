@@ -75,6 +75,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import secrets
 import threading
 import time
@@ -126,7 +127,10 @@ class Transport(Protocol):
     ``forget(seq)`` drops a probe the discoverer stopped waiting for;
     ``ready_at(flow)`` is the earliest clock time the flow may send again (a
     TCP flow just after it reached the target); ``send`` returning False means
-    the probe never left this machine (a local socket error)."""
+    the probe never left this machine (a local socket error), and
+    ``failure_reasons`` counts those by error ("WSAEACCES 10013");
+    ``take_reassigned()`` lists flows given a new source port, which the
+    discoverer starts over."""
     def send(self, flow: int, ttl: int, seq: int) -> bool | None: ...
     def read(self, timeout: float) -> list[probe.FlowAnswer]: ...
     def close(self) -> None: ...
@@ -135,6 +139,8 @@ class Transport(Protocol):
 # A run of local send failures this long stops the discovery: the system is
 # refusing the probes, and retrying would only spin.
 MAX_LOCAL_FAILURES = 20
+# What a local failure's reason looks like: an error name and its code.
+REASON = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,31}( [0-9]{1,6})?")
 
 
 @dataclass
@@ -201,6 +207,8 @@ class Discovery:
     paths_capped: bool = False
     stopped_by: str = "complete"          # complete | budget | cancel | deadline | gap | max_hops | local_error
     local_failures: int = 0               # probes this machine failed to send (not network loss)
+    local_failure_reasons: dict[str, int] = field(default_factory=dict)   # "WSAEACCES 10013" -> count
+    flows_restarted: int = 0              # flows started over on a new source port (TCP)
     budget: int = MAX_PROBES              # the cap on every probe sent, the target attempts included
     discovery_probes: int = 0             # probes sent before the target attempts
     seconds: float = 0.0
@@ -219,6 +227,9 @@ class Discovery:
         if self.stopped_by == "gap" and self.silent_stop:
             a, b = self.silent_stop
             return f"stopped after {b - a + 1} silent hops ({a} to {b})"
+        if self.stopped_by == "local_error" and self.local_failure_reasons:
+            reason = max(self.local_failure_reasons, key=self.local_failure_reasons.get)
+            return f"{STOP_TEXT['local_error']} ({reason})"
         return STOP_TEXT.get(self.stopped_by, self.stopped_by)
 
     def to_dict(self) -> dict:
@@ -226,7 +237,9 @@ class Discovery:
                 "at_least": True, "af": self.af,
                 "paths": [p.to_dict() for p in self.paths], "per_packet_hops": list(self.per_packet_hops),
                 "probes_sent": self.probes_sent, "flows": self.flows_used, "paths_capped": self.paths_capped,
-                "local_failures": self.local_failures, "budget": self.budget,
+                "local_failures": self.local_failures,
+                "local_failure_reasons": dict(sorted(self.local_failure_reasons.items())),
+                "flows_restarted": self.flows_restarted, "budget": self.budget,
                 "discovery_probes": self.discovery_probes,
                 "stopped_by": self.stopped_by, "stop_text": self.stop_text, "seconds": round(self.seconds, 1),
                 "max_hops": self.max_hops, "silent_stop": None if self.silent_stop is None else list(self.silent_stop),
@@ -304,9 +317,14 @@ class Discovery:
                                 rtt_to_target_ms=num(pd.get("rtt_to_target_ms")), reached_by=reached_by,
                                 silent=[ttl(silent[0]), ttl(silent[1])] if silent else None))
         d.per_packet_hops = [ttl(t) for t in data.get("per_packet_hops") or []]
-        for key in ("probes_sent", "flows", "local_failures", "budget", "discovery_probes"):
+        for key in ("probes_sent", "flows", "local_failures", "flows_restarted", "budget", "discovery_probes"):
             value = int(num(data.get(key)) or 0)
             setattr(d, "flows_used" if key == "flows" else key, value)
+        reasons = data.get("local_failure_reasons") or {}
+        if not isinstance(reasons, dict) or len(reasons) > 16 or not all(
+                isinstance(k, str) and REASON.fullmatch(k) for k in reasons):
+            raise ValueError("bad local_failure_reasons")
+        d.local_failure_reasons = {k: int(num(v) or 0) for k, v in reasons.items()}
         d.paths_capped = bool(data.get("paths_capped"))
         stopped = data.get("stopped_by")
         if stopped not in ("complete", "budget", "cancel", "deadline", "gap", "max_hops", "local_error"):
@@ -603,6 +621,7 @@ class Discoverer:
         if not todo:
             return
         self._record(self._batch(todo))
+        self._restart_reassigned()
         # One retry for probes a hop left unanswered while it answered others
         # (rate limiting, a lost reply), so a silence does not split a path.
         answered = {t for f, t in todo if self._result.get((f, t), (None,))[0]}
@@ -612,6 +631,24 @@ class Discoverer:
             for key in retry:
                 self._result.pop(key, None)
             self._record(self._batch(retry))
+
+    def _restart_reassigned(self):
+        """Flows the transport gave a new source port (their kept one was
+        refused): what they found came from another five-tuple, so it is
+        dropped and they are probed again from TTL 1 up to where the run is.
+        The routers they met still count as responders."""
+        take = getattr(self.t, "take_reassigned", None)
+        flows = take() if take is not None else []
+        if not flows:
+            return
+        upto = max((t for (_f, t) in self._result), default=0)
+        for f in flows:
+            for key in [k for k in self._result if k[0] == f]:
+                del self._result[key]
+            self._reached_at.pop(f, None)
+            self._ended.discard(f)
+        self.d.flows_restarted += len(flows)
+        self._probe_items([(f, t) for t in range(1, upto + 1) for f in flows])
 
     def _probe_flows_at(self, ttl: int, flows: range | list[int]):
         self._probe_items([(f, ttl) for f in flows])
@@ -721,12 +758,14 @@ class Discoverer:
                     self._stop = "budget"
             self._tcp_silence()
         finally:
+            d.local_failure_reasons = dict(getattr(self.t, "failure_reasons", None) or {})
             self.t.close()
         if self._stop:
             d.stopped_by = self._stop
         d.seconds = self.clock() - self._started
-        log.info("event=paths_done target=%s paths=%d probes=%d stopped_by=%s", tag(self.target),
-                 len(d.paths), d.probes_sent, d.stopped_by)
+        log.info("event=paths_done target=%s paths=%d probes=%d stopped_by=%s local_failures=%d reasons=%s",
+                 tag(self.target), len(d.paths), d.probes_sent, d.stopped_by, d.local_failures,
+                 ",".join(sorted(d.local_failure_reasons)) or "-")
         return d
 
     def _end_at_target(self, ttl: int, m: int):

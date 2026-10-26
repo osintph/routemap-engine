@@ -726,6 +726,20 @@
           "type": "integer",
           "minimum": 0
         },
+        "local_failure_reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxProperties": 16,
+          "description": "0.8.1: probes that never left this computer, by error name and code (\"WSAEACCES 10013\": 3); no address or port."
+        },
+        "flows_restarted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0.8.1: flows probed again from TTL 1 on a new source port, after their kept port was refused (TCP, Windows)."
+        },
         "budget": {
           "type": "integer",
           "minimum": 1

@@ -84,7 +84,7 @@ class _PerPacketAt11(odin_net.Net):
         self.rng = random.Random(11)
 
     def answer(self, sock):
-        flow = sock.bound[1] - self.transport._base
+        flow = self.flow(sock)
         if sock.ttl == 11 and max(odin_net.PATHS[odin_net.letter_of(flow)]) > 11:
             sock.error, sock.icmp = odin_net.probe.WSAEHOSTUNREACH, odin_net._info(self.rng.choice(self.ROUTERS))
             sock.ready_at = self.clock.t + 0.22

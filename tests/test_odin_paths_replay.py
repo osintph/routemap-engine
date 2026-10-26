@@ -121,7 +121,7 @@ class _ShyTarget(odin_net.Net):
         self.tries: dict[int, int] = {}
 
     def answer(self, sock):
-        flow = sock.bound[1] - self.transport._base
+        flow = self.flow(sock)
         end = max(odin_net.PATHS[odin_net.letter_of(flow)])
         if sock.ttl >= end and sock.ttl != 64:
             self.tries[flow] = self.tries.get(flow, 0) + 1
@@ -157,7 +157,7 @@ class _Retransmits(odin_net.Net):
         self.seen: set[int] = set()
 
     def answer(self, sock):
-        flow = sock.bound[1] - self.transport._base
+        flow = self.flow(sock)
         end = max(odin_net.PATHS[odin_net.letter_of(flow)])
         if sock.ttl >= end and flow % 3 == 0 and flow not in self.seen:
             self.seen.add(flow)
