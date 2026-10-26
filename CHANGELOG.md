@@ -2,6 +2,44 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.8.1] - 2026-10-26
+
+### Fixed
+
+- **Paths on Windows with reserved TCP ports.** Each flow of the Windows
+  TCP prober had a fixed source port, 40000 plus a random base plus the
+  flow, and Windows refuses a bind inside a reserved port range (reserved by
+  Hyper-V, WSL 2, Docker Desktop or `netsh int ipv4 add excludedportrange`)
+  with WSAEACCES (10013). Such a flow never sent a probe, its paths were
+  missing, and 20 refusals in a row ended the run with "this computer
+  refused to send probes". A flow's port is now the system's (a bind to
+  port 0), kept for its later probes; a kept port refused later (another
+  program took it) is replaced once and the flow is probed again from
+  TTL 1, so no path mixes the answers of two source ports.
+- **A probe that never leaves says why.** `Discovery.local_failure_reasons`
+  counts those probes by error name and code (`{"WSAEACCES 10013": 20}`; no
+  address or port), the stop text names the commonest ("stopped: this
+  computer refused to send probes (WSAEACCES 10013)"), and
+  `flows_restarted` counts the flows started over. Both are in the JSON
+  schema and in a remote agent's answer. The error was discarded before.
+- The DNS timing tests' local server binds TCP to a port the system assigns
+  (it could land in a range Windows reserves for TCP only).
+
+### Changed
+
+- CI and release tooling: certifi 2026.10.19
+  ([GHSA-6q48-6c7w-9gw2](https://github.com/advisories/GHSA-6q48-6c7w-9gw2))
+  and filelock 4.2.1
+  ([GHSA-v4x8-3wr5-3wq8](https://github.com/advisories/GHSA-v4x8-3wr5-3wq8),
+  [GHSA-9vhv-jxww-xfm5](https://github.com/advisories/GHSA-9vhv-jxww-xfm5),
+  [GHSA-567q-5qvw-pf92](https://github.com/advisories/GHSA-567q-5qvw-pf92))
+  in the release, test and SBOM locks; actions/upload-artifact 7.0.2 and
+  download-artifact 8.0.2, pinned by commit. The wheel's own requirements
+  are unchanged.
+- Windows CI reserves a TCP port range below the dynamic range and checks
+  that a bind inside it fails with WSAEACCES and that Paths sends every
+  probe and reaches the target with it in place.
+
 ## [0.8.0] - 2026-10-26
 
 Published 2026-10-26 to PyPI and GitHub Releases.
