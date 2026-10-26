@@ -123,8 +123,20 @@ jobs:
           echo "ROUTEMAP_PROBE_MIN_HOPS=1" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_HOPS=3" >> "$GITHUB_ENV"
           echo "ROUTEMAP_PROBE_TARGET6=::1" >> "$GITHUB_ENV"
+      - name: A reserved TCP port range (Windows; as Hyper-V, WSL 2 or Docker reserve them)
+        # The 0.8.0 prober bound fixed ports from 40000 on, and Windows refuses
+        # a bind inside a reserved range (engine CI, 26 Oct 2026). This
+        # reserves one below the dynamic range for this runner only (active
+        # store, gone at reboot); tests/test_tcp_reserved_live.py uses it.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          netsh int ipv4 add excludedportrange protocol=tcp startport=40000 numberofports=9152 store=active
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          netsh int ipv4 show excludedportrange protocol=tcp
+          "ROUTEMAP_RESERVED_PORTS=40000-49151" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: TCP prober diagnostics (Windows; prints, asserts nothing)
         if: runner.os == 'Windows'
         continue-on-error: true
         run: python scripts/diag_tcp_windows.py
-      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py tests/test_tcp_lab_live.py tests/test_tcp_reuse_live.py
+      - run: python -m pytest -q -s -rs tests/test_probe.py tests/test_probe_live6.py tests/test_multipath_live.py tests/test_tcp_lab_live.py tests/test_tcp_reuse_live.py tests/test_tcp_reserved_live.py
