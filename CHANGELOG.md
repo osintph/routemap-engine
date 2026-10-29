@@ -4,6 +4,8 @@ Keep a Changelog format; this project uses Semantic Versioning.
 
 ## [0.8.2] - 2026-10-29
 
+Published 2026-10-29 to PyPI and GitHub Releases.
+
 ### Fixed
 
 - **Watch kept a healthy cycle out when the system clock stepped**
