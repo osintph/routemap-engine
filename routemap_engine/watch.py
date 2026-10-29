@@ -38,12 +38,27 @@ it (so it has held for 2 x WINDOW cycles) and differs from the hop's settled
 set. Silence is the empty set, so a hop appearing or disappearing is a change
 of the same kind. The destination moving to another hop count is a change too.
 
-SLEEP AND SUSPEND
------------------
+SLEEP, SUSPEND AND CLOCK STEPS
+------------------------------
 When the machine sleeps or the process is stopped, the probes in flight did
-not get a fair wait. A cycle whose wall time or monotonic time runs well past
-its schedule is thrown away whole: nothing in it counts as sent or lost, the
-plot shows a gap, and the session records the gap with its start and end.
+not get a fair wait. A cycle that runs well past its schedule on a clock that
+keeps counting through suspend, or on the monotonic clock (a stopped process),
+is thrown away whole: nothing in it counts as sent or lost, the plot shows a
+gap, and the session records the gap with its start and end.
+
+time.monotonic() stops during suspend on Linux (CLOCK_MONOTONIC) and macOS
+(mach_absolute_time), so the suspend-inclusive clock is CLOCK_BOOTTIME on
+Linux, clock_gettime(CLOCK_MONOTONIC) on macOS (which, unlike Linux's, counts
+sleep) and time.monotonic() itself on Windows (GetTickCount64 to 3.12,
+QueryPerformanceCounter from 3.13, both counting sleep). The wall clock is
+never trusted for this: a time sync or a manual change steps it while probing
+carries on. A step of STEP_MIN or more against the suspend-inclusive clock is
+recorded in ``clock_steps`` and the cycle is kept (issue #24, reported on
+Bluesky by sasame-mcp.bsky.social). The plot places samples by elapsed time on
+that clock, so a kept step leaves no blank stretch and no overlap; exported
+sample times stay on the wall clock. Without such a clock (another platform,
+or a caller that injects wall and mono only) the old rule holds: an overrun on
+the wall clock is a gap too, since a step and a sleep then look the same.
 
 IPv4 or IPv6 (0.7.0), as the built-in prober; ``WatchOptions.family``
 chooses for a dual-stack name. RIPE Atlas is never used here.
@@ -53,6 +68,7 @@ from __future__ import annotations
 import ipaddress
 import math
 import secrets
+import sys
 import threading
 import time
 from collections import deque
@@ -79,6 +95,29 @@ LIVE_SAMPLES = 3600              # raw samples kept per hop for the live plot
 BUCKET_SECONDS = 60
 # A cycle that ran this much past its schedule spanned a sleep or a suspend.
 GAP_SLACK = 2.0
+# The wall clock moving this much more or less than the suspend-inclusive
+# clock in one cycle is a clock step; less is slewing or read jitter.
+STEP_MIN = 1.0
+
+
+def _boottime() -> float:
+    return time.clock_gettime(time.CLOCK_BOOTTIME)
+
+
+def _darwin_monotonic() -> float:
+    return time.clock_gettime(time.CLOCK_MONOTONIC)
+
+
+def suspend_clock() -> Callable[[], float] | None:
+    """This platform's clock that cannot be set and keeps counting while the
+    system is suspended, or None where none is known (see the module docs)."""
+    if sys.platform == "win32":
+        return time.monotonic
+    if sys.platform == "darwin":
+        return _darwin_monotonic
+    if sys.platform.startswith("linux") and hasattr(time, "CLOCK_BOOTTIME"):
+        return _boottime
+    return None
 
 
 def _clamp(value, low, high, default):
@@ -168,10 +207,13 @@ class Samples:
         self.raw: list = []
         self.buckets: list[dict] = []
 
-    def add(self, t: float, rtt: float | None) -> None:
-        self.live.append((round(t, 3), None if rtt is None else round(rtt, 3)))
+    def add(self, t: float, rtt: float | None, plot_t: float | None = None) -> None:
+        """``t`` is the wall clock time since the start, for the export;
+        ``plot_t`` the suspend-inclusive one, for the live plot."""
+        rtt = None if rtt is None else round(rtt, 3)
+        self.live.append((round(t if plot_t is None else plot_t, 3), rtt))
         if t < RAW_SECONDS:
-            self.raw.append(self.live[-1])
+            self.raw.append((round(t, 3), rtt))
         start = int(t // BUCKET_SECONDS) * BUCKET_SECONDS
         if not self.buckets or self.buckets[-1]["t"] != start:
             self.buckets.append({"t": start, "sent": 0, "lost": 0, "min_ms": None, "max_ms": None, "sum": 0.0})
@@ -263,6 +305,7 @@ ProbeFn = Callable[[str, int, int, float], probe.Reply]
 # with it needs a route to the target (a test or a caller with its own probe
 # function has none to check, even when it puts that function in its place).
 _BUILT_IN_PROBE = probe._probe
+_PLATFORM_CLOCK = object()
 
 
 @dataclass
@@ -277,6 +320,7 @@ class Session:
     addresses: dict[int, list[str]] = field(default_factory=dict)
     changes: list[dict] = field(default_factory=list)
     gaps: list[dict] = field(default_factory=list)
+    clock_steps: list[dict] = field(default_factory=list)
     reached_hop: int | None = None
     stopped_by: str | None = None
     ended_wall: float | None = None
@@ -310,9 +354,11 @@ class Session:
                 "duration_limit_s": self.options.duration, "cycles": self.cycles,
                 "stopped_by": self.stopped_by, "reached_hop": self.reached_hop,
                 "hops": hops, "loss": geo.loss_verdict(self.hops()),
-                "changes": [dict(c, at=iso(c["at"])) for c in self.changes],
+                "changes": [{k: (iso(v) if k == "at" else v) for k, v in c.items() if k != "t"}
+                            for c in self.changes],
                 "gaps": [{"from": iso(g["from"]), "to": iso(g["to"]), "seconds": round(g["to"] - g["from"], 1)}
                          for g in self.gaps],
+                "clock_steps": [{"at": iso(c["at"]), "seconds": round(c["seconds"], 1)} for c in self.clock_steps],
                 "resets": [iso(t) for t in self.resets],
                 "samples": {"resolution_s": self.options.interval, "raw_seconds": RAW_SECONDS,
                             "bucket_seconds": BUCKET_SECONDS,
@@ -325,6 +371,12 @@ class Watch:
 
     ``on_cycle(session)`` is called after every kept cycle, under no lock the
     caller must take; read the session there or after :meth:`run` returns.
+
+    ``boot`` is the suspend-inclusive clock. Left out, it is
+    :func:`suspend_clock` when ``wall`` and ``mono`` are the real clocks, and
+    None (the old rule) when they are injected; inject all three to test.
+    Gaps, changes and clock steps carry their plot position (``t``, or
+    ``t_from`` and ``t_to``) on that clock; the JSON leaves it out.
     :meth:`pause`, :meth:`resume`, :meth:`stop` and :meth:`reset` are safe from
     any thread.
     """
@@ -333,6 +385,7 @@ class Watch:
                  on_cycle: Callable[[Session], None] | None = None,
                  probe_fn: ProbeFn | None = None, resolve: Callable[[str], str] | None = None,
                  wall: Callable[[], float] = time.time, mono: Callable[[], float] = time.monotonic,
+                 boot: Callable[[], float] | None | object = _PLATFORM_CLOCK,
                  sleep: Callable[[float], None] | None = None):
         self.options = (options or WatchOptions()).clamped()
         self.target = target
@@ -340,6 +393,9 @@ class Watch:
         self.probe_fn = probe_fn or probe._probe
         self.resolve = resolve or (lambda target: probe.resolve(target, self.options.family))
         self.wall, self.mono = wall, mono
+        if boot is _PLATFORM_CLOCK:
+            boot = suspend_clock() if (wall is time.time and mono is time.monotonic) else None
+        self.boot = boot
         self._stop = threading.Event()
         self._running = threading.Event()
         self._running.set()
@@ -376,17 +432,19 @@ class Watch:
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
         tracker = PathTracker()
         seq = secrets.randbelow(0x10000)
-        start_mono, start_wall = self.mono(), self.wall()
+        boot = self.boot or self.wall     # the plot's clock; the wall clock without one
+        start_mono, start_wall, start_boot = self.mono(), self.wall(), boot()
         elapsed_active = 0.0
         workers = max(1, min(int(MAX_RATE), math.ceil(WAIT * MAX_RATE)))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="watch-probe") as pool:
             while not self._stop.is_set():
                 if not self._running.is_set():
-                    paused_at_wall = self.wall()
+                    paused_at_wall, paused_at_boot = self.wall(), boot()
                     while not self._running.is_set() and not self._stop.is_set():
                         self._running.wait(0.2)
                     # Time spent paused is not session time.
                     start_wall += self.wall() - paused_at_wall
+                    start_boot += boot() - paused_at_boot
                     continue
                 if opts.max_cycles is not None and s.cycles >= opts.max_cycles:
                     s.stopped_by = "count"
@@ -402,7 +460,7 @@ class Watch:
                         self._reset = False
                 depth = self._depth(s)
                 spacing = max(opts.interval / depth, 1.0 / MAX_RATE)
-                c_mono, c_wall = self.mono(), self.wall()
+                c_mono, c_wall, c_boot = self.mono(), self.wall(), boot()
                 futures = []
                 for ttl in range(1, depth + 1):
                     if self._stop.is_set():
@@ -421,23 +479,31 @@ class Watch:
                 spent = self.mono() - c_mono
                 if not self._stop.is_set() and spent < opts.interval:
                     self._sleep(opts.interval - spent)
-                end_mono, end_wall = self.mono(), self.wall()
+                end_mono, end_wall, end_boot = self.mono(), self.wall(), boot()
                 budget = max(opts.interval, depth * spacing) + WAIT + GAP_SLACK
-                if (end_mono - c_mono) > budget or (end_wall - c_wall) > budget:
+                if self.boot is not None:
+                    step = (end_wall - c_wall) - (end_boot - c_boot)
+                    if abs(step) >= STEP_MIN:
+                        # A time sync or a manual change, not a sleep: noted, and the cycle stands.
+                        s.clock_steps.append({"at": end_wall, "seconds": step, "t": end_boot - start_boot})
+                # Without a suspend-inclusive clock, boot is the wall clock: the old rule.
+                if (end_mono - c_mono) > budget or (end_boot - c_boot) > budget:
                     # Slept or suspended: this cycle did not get a fair wait.
-                    s.gaps.append({"from": c_wall, "to": end_wall})
+                    s.gaps.append({"from": c_wall, "to": end_wall,
+                                   "t_from": c_boot - start_boot, "t_to": end_boot - start_boot})
                     continue
                 if self._stop.is_set() and len(futures) < depth:
                     break
                 s.cycles += 1
                 elapsed_active += max(opts.interval, end_mono - c_mono)
                 t = c_wall - start_wall          # a sample's time is its cycle's start
+                plot_t = c_boot - start_boot
                 answers: dict[int, set[str]] = {}
                 reached = None
                 for ttl in range(1, depth + 1):
                     r = results.get(ttl) or probe.Reply(None, None)
                     s.stats.setdefault(ttl, HopStats()).add(r.rtt_ms if r.address else None)
-                    s.samples.setdefault(ttl, Samples()).add(t, r.rtt_ms if r.address else None)
+                    s.samples.setdefault(ttl, Samples()).add(t, r.rtt_ms if r.address else None, plot_t)
                     if r.address:
                         answers[ttl] = {r.address}
                         known = s.addresses.setdefault(ttl, [])
@@ -447,7 +513,8 @@ class Watch:
                         reached = ttl
                 if reached is not None:
                     s.reached_hop = reached if s.reached_hop is None else s.reached_hop
-                s.changes.extend(tracker.add(s.cycles, end_wall, answers, reached, depth))
+                for change in tracker.add(s.cycles, end_wall, answers, reached, depth):
+                    s.changes.append(dict(change, t=end_boot - start_boot))
                 if tracker.settled_reached is not None:
                     s.reached_hop = tracker.settled_reached
                 if self.on_cycle is not None:
