@@ -2,6 +2,39 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.8.2] - 2026-10-29
+
+### Fixed
+
+- **Watch kept a healthy cycle out when the system clock stepped**
+  ([#24](https://github.com/osintph/routemap-engine/issues/24), reported on
+  Bluesky by sasame-mcp.bsky.social). A cycle that overran its budget on the
+  wall clock was recorded as a sleep gap, so an NTP or other time sync step,
+  or a manual change of the clock, with probing running normally dropped that
+  cycle from the statistics. On Linux and macOS `time.monotonic()` stops
+  during suspend, so the wall clock was the only sign of a sleep there. A
+  cycle is now a gap only when it overruns on a clock that keeps counting
+  through suspend (`clock_gettime(CLOCK_BOOTTIME)` on Linux,
+  `clock_gettime(CLOCK_MONOTONIC)` on macOS, `time.monotonic()` on Windows,
+  where it already counts sleep) or on the monotonic clock (a stopped
+  process). Placement and the map were never affected.
+
+### Added
+
+- **`Session.clock_steps`**, and `clock_steps` in `Session.to_dict()`: one
+  entry per cycle in which the wall clock moved at least 1 s more or less
+  than the suspend-inclusive clock, `{"at": "2026-10-29T06:02:07Z",
+  "seconds": 5.0}` (negative when the clock was set back). The cycle is kept.
+  No other key of the JSON changes.
+- `Watch(..., boot=...)` injects the suspend-inclusive clock like `wall` and
+  `mono`; `watch.suspend_clock()` returns the platform's. A caller that
+  injects `wall` and `mono` without `boot` keeps the old rule.
+- Gaps, path changes and clock steps in a live session carry their position on
+  the plot (`t_from`/`t_to`, `t`), and the live plot samples are placed by
+  elapsed time on the suspend-inclusive clock, so a kept step leaves no blank
+  stretch and no overlap. The exported sample times stay on the wall clock,
+  and the JSON leaves the plot positions out.
+
 ## [0.8.1] - 2026-10-26
 
 Published 2026-10-26 to PyPI and GitHub Releases.

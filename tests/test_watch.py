@@ -10,6 +10,7 @@ import json
 import random
 import statistics
 import threading
+import time
 
 from concurrent.futures import Future
 
@@ -47,9 +48,13 @@ def synchronous_probes(request, monkeypatch):
 
 
 class Clock:
+    """Wall, monotonic and suspend-inclusive ("boot") clocks, moved together by
+    sleep() and apart by jump()."""
+
     def __init__(self):
         self.t = 1_791_500_000.0
         self.m = 1000.0
+        self.b = 5000.0
         self.lock = threading.Lock()
 
     def wall(self):
@@ -58,15 +63,20 @@ class Clock:
     def mono(self):
         return self.m
 
+    def boot(self):
+        return self.b
+
     def sleep(self, s):
         with self.lock:
             self.t += s
             self.m += s
+            self.b += s
 
-    def jump(self, wall=0.0, mono=0.0):
+    def jump(self, wall=0.0, mono=0.0, boot=0.0):
         with self.lock:
             self.t += wall
             self.m += mono
+            self.b += boot
 
 
 class Net:
@@ -100,12 +110,15 @@ def straight(depth=6, loss=None, rtt=lambda c, t: 10.0 * t):
     return script
 
 
-def run(script, *, cycles=50, interval=1.0, clock=None, on_cycle=None, **opts):
+def run(script, *, cycles=50, interval=1.0, clock=None, on_cycle=None, boot=False, **opts):
+    """boot=True also injects the suspend-inclusive clock; without it the
+    session runs on the fallback rule, as every caller did before 0.8.2."""
     clock = clock or Clock()
     net = Net(clock, script)
+    extra = {"boot": clock.boot} if boot else {}
     w = watch.Watch("example.net", watch.WatchOptions(interval=interval, max_cycles=cycles, **opts),
                     probe_fn=net.probe, resolve=lambda _t: "192.0.2.6",
-                    wall=clock.wall, mono=clock.mono, sleep=clock.sleep, on_cycle=on_cycle)
+                    wall=clock.wall, mono=clock.mono, sleep=clock.sleep, on_cycle=on_cycle, **extra)
     return w, w.run(), net, clock
 
 
@@ -301,6 +314,164 @@ def test_sleep_or_suspend_is_a_gap_not_loss(kind):
     assert all(h["loss_pct"] == 0 for h in hops.values()), hops
     assert len(s.gaps) == 1 and s.gaps[0]["to"] - s.gaps[0]["from"] >= 600
     assert s.cycles == 60 and all(h["sent"] == 60 for h in hops.values())
+
+
+# --------------------------------------------------------------- clock steps --
+#
+# Issue #24, reported on Bluesky by sasame-mcp.bsky.social: a step of the wall
+# clock alone was recorded as a sleep gap. Only the suspend-inclusive clock (or
+# the monotonic one, for a stopped process) can say that a cycle overran.
+
+def _jump_at(clock, *, cycle=30, ttl=3, **jump):
+    def script(c, t):
+        if c == cycle and t == ttl:
+            clock.jump(**jump)
+        return f"192.0.2.{t}", 10.0 * t, t == 6
+    return script
+
+
+@pytest.mark.parametrize("interval", [1.0, 5.0])
+@pytest.mark.parametrize("ttl", [1, 3, 6])
+@pytest.mark.parametrize("step", [3.0, 5.0, 60.0, 3600.0, -5.0, -3600.0])
+def test_a_wall_clock_step_keeps_the_cycle_and_is_recorded(monkeypatch, step, ttl, interval):
+    monkeypatch.setattr(watch, "RAW_SECONDS", 10**6)
+    clock = Clock()
+    _, s, _, _ = run(_jump_at(clock, ttl=ttl, wall=step), cycles=60, interval=interval, clock=clock, boot=True)
+    assert s.gaps == []
+    assert s.cycles == 60
+    hops = {h["hop"]: h for h in s.hops()}
+    assert all(h["sent"] == 60 and h["loss_pct"] == 0 for h in hops.values()), hops
+    assert len(s.clock_steps) == 1
+    assert s.clock_steps[0]["seconds"] == pytest.approx(step)
+    # The plot runs on the suspend-inclusive clock: one sample per interval,
+    # no blank stretch after a forward step, no overlap after a backward one.
+    times = [t for t, _ in s.samples[1].live]
+    assert all(b - a == pytest.approx(interval) for a, b in zip(times, times[1:])), times
+    # The export keeps wall clock sample times, so they move by the step once.
+    raw = s.samples[1].to_dict()["raw"]
+    steps = sorted(round(b[0] - a[0], 6) for a, b in zip(raw, raw[1:]))
+    assert len(raw) == 60
+    assert sorted(steps) == sorted([interval] * 58 + [interval + step])
+
+
+CASES = [
+    # id, wall, mono, boot (seconds added mid-cycle), a gap?, step recorded
+    ("normal", 0, 0, 0, False, None),
+    ("suspend-linux-macos", 600, 0, 600, True, None),
+    ("suspend-windows", 600, 600, 600, True, None),
+    ("wall-steps-forward", 5, 0, 0, False, 5),
+    ("wall-steps-backward", -5, 0, 0, False, -5),
+    ("process-stopped", 600, 600, 600, True, None),
+    ("suspend-and-step", 900, 0, 600, True, 300),
+    ("slew-below-threshold", 0.3, 0, 0, False, None),
+    # Not expected (the suspend-inclusive clock never runs slower than the
+    # monotonic one), so a monotonic overrun alone still counts.
+    ("monotonic-only", 0, 600, 0, True, None),
+]
+
+
+@pytest.mark.parametrize("wall,mono,boot,gap,step", [c[1:] for c in CASES], ids=[c[0] for c in CASES])
+def test_every_case_of_the_rule(wall, mono, boot, gap, step):
+    clock = Clock()
+    _, s, _, _ = run(_jump_at(clock, wall=wall, mono=mono, boot=boot), cycles=60, clock=clock, boot=True)
+    assert len(s.gaps) == (1 if gap else 0)
+    assert s.cycles == 60 and all(h["sent"] == 60 and h["loss_pct"] == 0 for h in s.hops())
+    if step is None:
+        assert s.clock_steps == []
+    else:
+        assert [round(c["seconds"], 3) for c in s.clock_steps] == [step]
+    if gap:
+        assert s.gaps[0]["to"] - s.gaps[0]["from"] >= wall
+        # On the plot the gap is as long as the suspend-inclusive clock says.
+        assert boot <= s.gaps[0]["t_to"] - s.gaps[0]["t_from"] <= boot + 1.0 + 1e-6
+
+
+@pytest.mark.parametrize("wall,mono", [(5, 0), (600, 0), (600, 600)], ids=["step", "sleep", "stopped"])
+def test_without_a_suspend_clock_the_old_rule_holds(wall, mono):
+    """Only reachable by injecting wall and mono without boot: a forward step
+    and a sleep look the same there, so both stay gaps and nothing is hidden."""
+    clock = Clock()
+    w, s, _, _ = run(_jump_at(clock, wall=wall, mono=mono), cycles=60, clock=clock)
+    assert w.boot is None
+    assert len(s.gaps) == 1 and s.clock_steps == []
+
+
+def test_a_step_during_a_pause_is_not_session_time():
+    clock = Clock()
+    net = Net(clock, straight())
+    w = None
+
+    def later():
+        time.sleep(0.3)               # real time: the loop is waiting, paused
+        clock.jump(wall=-50, mono=10, boot=10)
+        w.resume()
+
+    def on_cycle(s):
+        if s.cycles == 20:
+            w.pause()
+            threading.Thread(target=later).start()
+    w = watch.Watch("example.net", watch.WatchOptions(max_cycles=40), probe_fn=net.probe,
+                    resolve=lambda _t: "192.0.2.6", wall=clock.wall, mono=clock.mono, boot=clock.boot,
+                    sleep=clock.sleep, on_cycle=on_cycle)
+    s = w.run()
+    assert s.cycles == 40 and s.gaps == [] and s.clock_steps == []
+    live = [t for t, _ in s.samples[6].live]
+    raw = [t for t, _ in s.samples[6].to_dict()["raw"]]
+    for times in (live, raw):
+        assert all(b - a == pytest.approx(1.0) for a, b in zip(times, times[1:])), times
+
+
+EXPECTED = {"linux": "_boottime", "darwin": "_darwin_monotonic", "win32": "monotonic"}
+
+
+@pytest.mark.parametrize("platform", sorted(EXPECTED))
+def test_the_default_constructor_picks_the_platforms_suspend_clock(monkeypatch, platform):
+    monkeypatch.setattr(watch.sys, "platform", platform)
+    monkeypatch.setattr(watch.time, "CLOCK_BOOTTIME", 7, raising=False)
+    monkeypatch.setattr(watch.time, "CLOCK_MONOTONIC", 6, raising=False)
+    w = watch.Watch("example.net")
+    assert w.boot is not None and w.boot.__name__ == EXPECTED[platform]
+    assert watch.suspend_clock() is w.boot
+
+
+def test_other_platforms_have_no_suspend_clock(monkeypatch):
+    monkeypatch.setattr(watch.sys, "platform", "freebsd14")
+    assert watch.suspend_clock() is None
+
+
+def test_the_suspend_clock_reads_on_this_machine():
+    """Runs on every CI runner (Linux, macOS, Windows): the clock the default
+    constructor picks exists, never goes back and keeps up with monotonic.
+    It reads clocks only; nothing is sent."""
+    import sys
+    boot = watch.Watch("example.net").boot
+    assert boot is not None, sys.platform
+    b0, m0 = boot(), time.monotonic()
+    time.sleep(0.2)
+    b1, m1 = boot(), time.monotonic()
+    assert b1 >= b0 and (b1 - b0) >= (m1 - m0) - 0.05
+
+
+def test_clock_steps_are_in_the_json_and_nothing_else_changes():
+    clock = Clock()
+
+    def script(c, t):
+        if c == 30 and t == 3:
+            clock.jump(wall=5)
+        if t == 4:
+            return ("198.51.100.9" if c > 25 else "198.51.100.1"), 40.0, False
+        return f"192.0.2.{t}", 10.0 * t, t == 6
+    _, s, _, _ = run(script, cycles=60, clock=clock, boot=True)
+    assert s.changes and all("t" in c for c in s.changes)       # the plot's position
+    d = json.loads(json.dumps(s.to_dict()))
+    assert d["clock_steps"] == [{"at": d["clock_steps"][0]["at"], "seconds": 5.0}]
+    assert d["clock_steps"][0]["at"].endswith("Z")
+    assert d["gaps"] == []
+    assert d["changes"] and all("t" not in c for c in d["changes"])
+    clock = Clock()
+    _, s, _, _ = run(_jump_at(clock, wall=600, boot=600), cycles=40, clock=clock, boot=True)
+    d = json.loads(json.dumps(s.to_dict()))
+    assert [sorted(g) for g in d["gaps"]] == [["from", "seconds", "to"]] and d["clock_steps"] == []
 
 
 def test_pause_sends_nothing_and_reset_clears_the_counters():

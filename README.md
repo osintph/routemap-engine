@@ -76,7 +76,11 @@ diff.diff_routes(old_route, new_route)["summary"]
 - **Continuous mode** (`watch`): one target probed again and again, mtr style,
   with the built-in ICMP prober: per-hop sent, loss, last, best, average, worst
   and jitter, plot samples, path changes over 10-cycle windows (so ECMP
-  alternation is not a change) and sleep gaps that never count as loss. One
+  alternation is not a change) and sleep gaps that never count as loss. A gap
+  is sleep, suspend or a stopped process, measured on a clock that counts
+  through suspend (CLOCK_BOOTTIME on Linux, CLOCK_MONOTONIC on macOS,
+  `time.monotonic` on Windows); a change of the system clock is not a gap; the
+  cycle is kept and the change listed in `clock_steps` (0.8.2). One
   cycle a second at most, 30 probes a second at most, an hour by default and 8
   hours at most; IPv4 only. It probes from the machine it runs on, so it is
   for the desktop app and the CLI, not for a web server.
