@@ -56,9 +56,12 @@ carries on. A step of STEP_MIN or more against the suspend-inclusive clock is
 recorded in ``clock_steps`` and the cycle is kept (issue #24, reported on
 Bluesky by sasame-mcp.bsky.social). The plot places samples by elapsed time on
 that clock, so a kept step leaves no blank stretch and no overlap; exported
-sample times stay on the wall clock. Without such a clock (another platform,
-or a caller that injects wall and mono only) the old rule holds: an overrun on
-the wall clock is a gap too, since a step and a sleep then look the same.
+sample times stay on the wall clock. Without such a clock the old rule holds:
+an overrun on the wall clock is a gap too, since a step and a sleep then look
+the same. That happens on another platform, or when the clock cannot be read
+(at the start or later in the session); the session then says why once, in
+``clock_fallback``, and the log says it once. A caller that injects wall and
+mono only gets the old rule silently.
 
 IPv4 or IPv6 (0.7.0), as the built-in prober; ``WatchOptions.family``
 chooses for a dual-stack name. RIPE Atlas is never used here.
@@ -66,6 +69,7 @@ chooses for a dual-stack name. RIPE Atlas is never used here.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import math
 import secrets
 import sys
@@ -78,6 +82,8 @@ from typing import Callable
 
 from routemap_engine import geo, probe
 from routemap_engine.parse import Hop
+
+log = logging.getLogger("routemap_engine.watch")
 
 INTERVAL_DEFAULT = 1.0
 INTERVAL_MIN = 1.0
@@ -118,6 +124,37 @@ def suspend_clock() -> Callable[[], float] | None:
     if sys.platform.startswith("linux") and hasattr(time, "CLOCK_BOOTTIME"):
         return _boottime
     return None
+
+
+NO_SUSPEND_CLOCK = "no clock on this computer counts through suspend"
+
+
+def _why(exc: Exception) -> str:
+    errno = getattr(exc, "errno", None)
+    return f"{type(exc).__name__} {errno}" if errno else type(exc).__name__
+
+
+class _SuspendClock:
+    """The suspend-inclusive clock while it can be read; after a failed read
+    (or with none), the wall clock, offset so readings carry on where they
+    stopped. ``on_fail(reason)`` is called once, at the failure."""
+
+    def __init__(self, read: Callable[[], float] | None, wall: Callable[[], float],
+                 on_fail: Callable[[str], None]):
+        self.read, self.wall, self.on_fail = read, wall, on_fail
+        self.offset = 0.0
+
+    def __call__(self) -> float:
+        if self.read is not None:
+            try:
+                value = float(self.read())
+            except Exception as exc:  # noqa: BLE001 - a clock that fails falls back, never stops the session
+                self.read = None
+                self.on_fail(f"the clock that counts through suspend could not be read ({_why(exc)})")
+            else:
+                self.offset = value - self.wall()
+                return value
+        return self.wall() + self.offset
 
 
 def _clamp(value, low, high, default):
@@ -321,6 +358,7 @@ class Session:
     changes: list[dict] = field(default_factory=list)
     gaps: list[dict] = field(default_factory=list)
     clock_steps: list[dict] = field(default_factory=list)
+    clock_fallback: str | None = None
     reached_hop: int | None = None
     stopped_by: str | None = None
     ended_wall: float | None = None
@@ -359,6 +397,7 @@ class Session:
                 "gaps": [{"from": iso(g["from"]), "to": iso(g["to"]), "seconds": round(g["to"] - g["from"], 1)}
                          for g in self.gaps],
                 "clock_steps": [{"at": iso(c["at"]), "seconds": round(c["seconds"], 1)} for c in self.clock_steps],
+                "clock_fallback": self.clock_fallback,
                 "resets": [iso(t) for t in self.resets],
                 "samples": {"resolution_s": self.options.interval, "raw_seconds": RAW_SECONDS,
                             "bucket_seconds": BUCKET_SECONDS,
@@ -374,7 +413,9 @@ class Watch:
 
     ``boot`` is the suspend-inclusive clock. Left out, it is
     :func:`suspend_clock` when ``wall`` and ``mono`` are the real clocks, and
-    None (the old rule) when they are injected; inject all three to test.
+    None (the old rule, silently) when they are injected; inject all three to
+    test. A missing or failing clock falls back to the old rule and says so in
+    ``Session.clock_fallback``; it never stops the session.
     Gaps, changes and clock steps carry their plot position (``t``, or
     ``t_from`` and ``t_to``) on that clock; the JSON leaves it out.
     :meth:`pause`, :meth:`resume`, :meth:`stop` and :meth:`reset` are safe from
@@ -393,8 +434,12 @@ class Watch:
         self.probe_fn = probe_fn or probe._probe
         self.resolve = resolve or (lambda target: probe.resolve(target, self.options.family))
         self.wall, self.mono = wall, mono
+        self._missing = None
         if boot is _PLATFORM_CLOCK:
-            boot = suspend_clock() if (wall is time.time and mono is time.monotonic) else None
+            boot = None
+            if wall is time.time and mono is time.monotonic:
+                boot = suspend_clock()
+                self._missing = NO_SUSPEND_CLOCK if boot is None else None
         self.boot = boot
         self._stop = threading.Event()
         self._running = threading.Event()
@@ -432,7 +477,13 @@ class Watch:
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
         tracker = PathTracker()
         seq = secrets.randbelow(0x10000)
-        boot = self.boot or self.wall     # the plot's clock; the wall clock without one
+
+        def fall_back(reason):           # called once at most: the clock then stays on the wall clock
+            s.clock_fallback = reason
+            log.warning("Watch: %s; a change of the system clock may show as a gap", reason)
+        if self._missing:
+            fall_back(self._missing)
+        boot = _SuspendClock(self.boot, self.wall, fall_back)   # the plot's clock too
         start_mono, start_wall, start_boot = self.mono(), self.wall(), boot()
         elapsed_active = 0.0
         workers = max(1, min(int(MAX_RATE), math.ceil(WAIT * MAX_RATE)))
@@ -481,12 +532,12 @@ class Watch:
                     self._sleep(opts.interval - spent)
                 end_mono, end_wall, end_boot = self.mono(), self.wall(), boot()
                 budget = max(opts.interval, depth * spacing) + WAIT + GAP_SLACK
-                if self.boot is not None:
-                    step = (end_wall - c_wall) - (end_boot - c_boot)
-                    if abs(step) >= STEP_MIN:
-                        # A time sync or a manual change, not a sleep: noted, and the cycle stands.
-                        s.clock_steps.append({"at": end_wall, "seconds": step, "t": end_boot - start_boot})
-                # Without a suspend-inclusive clock, boot is the wall clock: the old rule.
+                # Zero once boot reads the wall clock.
+                step = (end_wall - c_wall) - (end_boot - c_boot)
+                if abs(step) >= STEP_MIN:
+                    # A time sync or a manual change, not a sleep: noted, and the cycle stands.
+                    s.clock_steps.append({"at": end_wall, "seconds": step, "t": end_boot - start_boot})
+                # Without a suspend-inclusive clock, boot reads the wall clock: the old rule.
                 if (end_mono - c_mono) > budget or (end_boot - c_boot) > budget:
                     # Slept or suspended: this cycle did not get a fair wait.
                     s.gaps.append({"from": c_wall, "to": end_wall,

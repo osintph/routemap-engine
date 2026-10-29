@@ -18,6 +18,7 @@ Keep a Changelog format; this project uses Semantic Versioning.
   `clock_gettime(CLOCK_MONOTONIC)` on macOS, `time.monotonic()` on Windows,
   where it already counts sleep) or on the monotonic clock (a stopped
   process). Placement and the map were never affected.
+- The README said Watch was IPv4 only; it has run over IPv6 too since 0.7.0.
 
 ### Added
 
@@ -26,9 +27,15 @@ Keep a Changelog format; this project uses Semantic Versioning.
   than the suspend-inclusive clock, `{"at": "2026-10-29T06:02:07Z",
   "seconds": 5.0}` (negative when the clock was set back). The cycle is kept.
   No other key of the JSON changes.
+- **`Session.clock_fallback`**, and `clock_fallback` in the JSON (null, or
+  why): where the suspend-inclusive clock is missing, or a read of it fails
+  (at the start or later), the session falls back to the old two-clock rule
+  instead of stopping, says why once ("the clock that counts through suspend
+  could not be read (OSError 22)") and logs it once. A clock change can then
+  show as a gap, as before 0.8.2.
 - `Watch(..., boot=...)` injects the suspend-inclusive clock like `wall` and
   `mono`; `watch.suspend_clock()` returns the platform's. A caller that
-  injects `wall` and `mono` without `boot` keeps the old rule.
+  injects `wall` and `mono` without `boot` keeps the old rule, silently.
 - Gaps, path changes and clock steps in a live session carry their position on
   the plot (`t_from`/`t_to`, `t`), and the live plot samples are placed by
   elapsed time on the suspend-inclusive clock, so a kept step leaves no blank

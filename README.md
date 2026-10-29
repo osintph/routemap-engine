@@ -74,16 +74,20 @@ diff.diff_routes(old_route, new_route)["summary"]
 - **Path diff** aligned by place, with a written summary.
 - **Exchange points** (`ixp`): present, off, and shipped without data.
 - **Continuous mode** (`watch`): one target probed again and again, mtr style,
-  with the built-in ICMP prober: per-hop sent, loss, last, best, average, worst
-  and jitter, plot samples, path changes over 10-cycle windows (so ECMP
-  alternation is not a change) and sleep gaps that never count as loss. A gap
-  is sleep, suspend or a stopped process, measured on a clock that counts
-  through suspend (CLOCK_BOOTTIME on Linux, CLOCK_MONOTONIC on macOS,
-  `time.monotonic` on Windows); a change of the system clock is not a gap; the
-  cycle is kept and the change listed in `clock_steps` (0.8.2). One
-  cycle a second at most, 30 probes a second at most, an hour by default and 8
-  hours at most; IPv4 only. It probes from the machine it runs on, so it is
-  for the desktop app and the CLI, not for a web server.
+  with the built-in ICMP prober (ICMPv6 over IPv6): per-hop sent, loss, last,
+  best, average, worst and jitter, plot samples, path changes over 10-cycle
+  windows (so ECMP alternation is not a change) and sleep gaps that never
+  count as loss. A gap is sleep, suspend or a stopped process, measured on a
+  clock that counts through suspend (CLOCK_BOOTTIME on Linux, CLOCK_MONOTONIC
+  on macOS, `time.monotonic` on Windows). A change of the system clock is not
+  a gap: the cycle is kept and the change listed in `clock_steps` (0.8.2).
+  Where that clock is missing or cannot be read, the session falls back to
+  the older rule (a clock change can then show as a gap) and says why in
+  `clock_fallback`. One cycle a second at most, 30 probes a second at most, an
+  hour by default and 8 hours at most; IPv4 or IPv6 (0.7.0), with
+  `WatchOptions.family` choosing for a dual-stack name. It probes from the
+  machine it runs on, so it is for the desktop app and the CLI, not for a web
+  server.
 
 ### Probes and remote agents (0.8.0)
 
@@ -135,7 +139,7 @@ multipath.discover("example.com", address=resolved.address)
 | IP database | public hop addresses (only those DB-IP Lite City did not place, when the caller passes it) | stat.ripe.net |
 | `ripe.RipeStat` | public addresses, prefixes, AS numbers | stat.ripe.net |
 | `baseline.Baseline` | two country codes and an anchor name | atlas.ripe.net |
-| `watch.Watch` | ICMP echo probes with rising TTL, one per hop per cycle | the target, and the routers on the way |
+| `watch.Watch` | ICMP echo probes (ICMPv6 over IPv6) with rising TTL, one per hop per cycle | the target, and the routers on the way |
 | `dnstime.measure` | the target's name (A and AAAA queries) | the system resolver, and each resolver the caller names |
 | `ports.check_ports` | one TCP connection attempt per port, and a TLS ClientHello with the target's name for TLS ports | the target's address |
 | `multipath.discover` | ICMP echo probes (macOS, Linux) or TCP SYNs to port 443 (Windows) with rising TTL, plus one ICMP echo per hop silent to TCP | the target, and the routers on the way |
