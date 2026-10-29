@@ -394,6 +394,56 @@ def test_without_a_suspend_clock_the_old_rule_holds(wall, mono):
     w, s, _, _ = run(_jump_at(clock, wall=wall, mono=mono), cycles=60, clock=clock)
     assert w.boot is None
     assert len(s.gaps) == 1 and s.clock_steps == []
+    assert s.clock_fallback is None              # a test seam, not a fallback to report
+
+
+def _failing_after(clock, reads, exc):
+    n = {"reads": 0}
+
+    def boot():
+        n["reads"] += 1
+        if n["reads"] > reads:
+            raise exc
+        return clock.boot()
+    return boot
+
+
+@pytest.mark.parametrize("reads", [0, 1, 25, 70], ids=["at-start", "first-cycle", "mid-session", "late"])
+@pytest.mark.parametrize("exc", [OSError(22, "Invalid argument"), ValueError("bad clock"), AttributeError("no clock")],
+                         ids=["OSError", "ValueError", "AttributeError"])
+def test_a_failing_clock_read_falls_back_instead_of_raising(caplog, reads, exc):
+    clock = Clock()
+    net = Net(clock, _jump_at(clock, cycle=45, wall=5))
+    w = watch.Watch("example.net", watch.WatchOptions(max_cycles=60), probe_fn=net.probe,
+                    resolve=lambda _t: "192.0.2.6", wall=clock.wall, mono=clock.mono,
+                    boot=_failing_after(clock, reads, exc), sleep=clock.sleep)
+    with caplog.at_level("WARNING", logger="routemap_engine.watch"):
+        s = w.run()
+    assert s.cycles == 60 and s.stopped_by == "count"
+    assert s.clock_fallback.startswith("the clock that counts through suspend could not be read")
+    assert type(exc).__name__ in s.clock_fallback and "Invalid argument" not in s.clock_fallback
+    assert len([r for r in caplog.records if r.name == "routemap_engine.watch"]) == 1
+    # From the failure on, the old rule: the step at cycle 45 is a gap again.
+    assert len(s.gaps) == 1 and s.clock_steps == []
+    # The plot carries on where the clock stopped: no jump at the failure, only
+    # the gap (cycle 45 thrown away, then the 5 s step: 1 + 1 + 5 s).
+    times = [t for t, _ in s.samples[1].live]
+    jumps = [round(b - a, 6) for a, b in zip(times, times[1:]) if abs(b - a - 1.0) > 1e-6]
+    assert jumps == [7.0], times
+    assert json.loads(json.dumps(s.to_dict()))["clock_fallback"] == s.clock_fallback
+
+
+def test_a_platform_without_a_suspend_clock_says_so(monkeypatch, caplog):
+    monkeypatch.setattr(watch.sys, "platform", "freebsd14")
+    w = watch.Watch("example.net", watch.WatchOptions(max_cycles=3),
+                    probe_fn=lambda dst, ttl, seq, wait: probe.Reply(f"192.0.2.{ttl}", 1.0, ttl == 2),
+                    resolve=lambda _t: "192.0.2.2", sleep=lambda _s: None)
+    assert w.boot is None
+    with caplog.at_level("WARNING", logger="routemap_engine.watch"):
+        s = w.run()
+    assert s.cycles == 3 and s.clock_fallback == watch.NO_SUSPEND_CLOCK
+    assert len([r for r in caplog.records if r.name == "routemap_engine.watch"]) == 1
+    assert s.to_dict()["clock_fallback"] == watch.NO_SUSPEND_CLOCK
 
 
 def test_a_step_during_a_pause_is_not_session_time():
@@ -468,6 +518,7 @@ def test_clock_steps_are_in_the_json_and_nothing_else_changes():
     assert d["clock_steps"][0]["at"].endswith("Z")
     assert d["gaps"] == []
     assert d["changes"] and all("t" not in c for c in d["changes"])
+    assert d["clock_fallback"] is None
     clock = Clock()
     _, s, _, _ = run(_jump_at(clock, wall=600, boot=600), cycles=40, clock=clock, boot=True)
     d = json.loads(json.dumps(s.to_dict()))
