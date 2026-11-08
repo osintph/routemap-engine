@@ -15,7 +15,7 @@ import threading
 
 import pytest
 
-from routemap_engine import agent, analyse_paths_sync, multipath, ports, runner
+from routemap_engine import __about__, agent, analyse_paths_sync, multipath, ports, runner
 from routemap_engine.geo import Sources
 from routemap_engine.target import InvalidTarget
 from helpers.lab import Lab
@@ -240,7 +240,7 @@ def test_the_whole_chain_through_a_fake_ssh_and_a_real_shell(tmp_path):
     proc = subprocess.run(agent.ssh_argv(str(fake_ssh), "fra-vps", line), capture_output=True, env=env, timeout=60)
     run = agent.read_run(io.BytesIO(proc.stdout))
     assert run.error is None, (run.error, proc.stderr[-500:])
-    assert run.hello["engine"].startswith("0.8")
+    assert run.hello["engine"] == __about__.__version__
 
 
 # ------------------------------------------------------- masking
@@ -305,7 +305,7 @@ def test_masked_addresses_leave_the_tool_text():
 
 def test_the_engine_command_line(capsys):
     from routemap_engine import cli
-    assert cli.main(["--version"]) == 0 and capsys.readouterr().out.startswith("routemap-engine 0.8")
+    assert cli.main(["--version"]) == 0 and capsys.readouterr().out == f"routemap-engine {__about__.__version__}\n"
     assert cli.main([]) == 2 and "usage" in capsys.readouterr().err
     assert cli.main(["agent", "1", "hello"]) == 0 and '"protocol":1' in capsys.readouterr().out
 

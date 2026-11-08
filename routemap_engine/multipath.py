@@ -83,7 +83,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
-from routemap_engine import probe
+from routemap_engine import interfaces, probe
 from routemap_engine.logsafe import tag
 
 log = logging.getLogger("routemap_engine.multipath")
@@ -117,6 +117,12 @@ FINAL_PROBE_DETAIL = ("after the silent hops that ended the discovery, the targe
                       "are unknown")
 # The probe each method sends, for the trace text's header.
 METHOD_MARKS = {"icmp-paris": "ICMP echo", "tcp-paris": "TCP SYN to port {port}"}
+# The TCP interception check (0.9.0): what triggered it, by name, in the export.
+INTERCEPTION_TTLS = (1, 2)
+INTERCEPTION_FLOWS = (MAX_FLOWS, MAX_FLOWS + 1)     # outside the flows discovery uses
+INTERCEPTION_CONDITIONS = tuple(f"connect_{how}_at_ttl_{ttl}" for how in ("completed", "refused")
+                                for ttl in INTERCEPTION_TTLS)
+INTERCEPTION_GUARDS = ("target_on_local_subnet", "icmp_echo_reached_target")
 STOP_TEXT = {"complete": "complete", "budget": "stopped at the probe cap", "cancel": "stopped by the user",
              "deadline": "stopped at the time limit", "max_hops": "stopped at the hop limit",
              "local_error": "stopped: this computer refused to send probes"}
@@ -220,6 +226,8 @@ class Discovery:
     tcp_silent_from: int | None = None    # first TTL of a stretch silent to TCP whose ICMP check answered
     tcp_silent_by: str | None = None      # who answered that ICMP check: "router" or "target"
     ping_interval: float | None = None    # seconds between rounds of target attempts, at least
+    interception: dict | None = None      # the TCP interception check (0.9.0); None when it did not run
+    interface: interfaces.InterfaceUse | None = None   # the adapter used; kept out of to_dict(), the export adds it
 
     @property
     def stop_text(self) -> str:
@@ -247,6 +255,7 @@ class Discovery:
                 "tcp_silent_by": self.tcp_silent_by,
                 "ping_interval": self.ping_interval,
                 "icmp_checks": [{"ttl": t, "address": a} for t, a in sorted(self.icmp_checks.items())],
+                **({"interception": self.interception} if self.interception is not None else {}),
                 "resolved": {"name": self.target, "address": self.address, "family": self.af}}
 
     def to_wire(self) -> dict:
@@ -341,6 +350,7 @@ class Discovery:
             raise ValueError("bad tcp_silent_by")
         d.tcp_silent_by = data.get("tcp_silent_by")
         d.icmp_checks = {ttl(c["ttl"]): addr(c["address"], True) for c in data.get("icmp_checks") or []}
+        d.interception = _wire_interception(data.get("interception"), addr)
         return d
 
     def trace_text(self) -> str:
@@ -360,6 +370,21 @@ class Discovery:
                 replies.append(probe.Reply(None, None))
             lines.extend(probe.format_hop(ttl, replies))
         return "\n".join(lines) + "\n"
+
+
+def _wire_interception(data, addr) -> dict | None:
+    """The interception check from another machine, each field checked."""
+    if data is None:
+        return None
+    if not isinstance(data, dict) or data.get("condition") not in (None, *INTERCEPTION_CONDITIONS) \
+            or data.get("guard") not in (None, *INTERCEPTION_GUARDS):
+        raise ValueError("bad interception")
+    split = data.get("split_hop1")
+    if split is not None and not isinstance(split, dict):
+        raise ValueError("bad interception")
+    return {"checked": True, "intercepted": data.get("intercepted") is True, "condition": data.get("condition"),
+            "guard": data.get("guard"), "split_hop1": None if split is None else {
+                "tcp": addr(split.get("tcp")), "icmp": addr(split.get("icmp"))}}
 
 
 def _median(values: list[float]) -> float | None:
@@ -427,10 +452,16 @@ class Discoverer:
                  options: Options | None = None, clock: Callable[[], float] = time.perf_counter,
                  cancel: threading.Event | None = None, deadline: float | None = None,
                  on_progress: Callable[[dict], None] | None = None,
-                 icmp_check: Callable[[int], str | None] | None = None):
+                 icmp_check: Callable[[int], str | None] | None = None,
+                 check_interception: bool = False, on_local_subnet: bool = False):
         """*icmp_check(ttl)* sends one ICMP echo to the target with that TTL
         and returns the address that answered, or None: given for TCP runs, so
-        a stretch silent to TCP can be told from routers that answer nothing."""
+        a stretch silent to TCP can be told from routers that answer nothing.
+        *check_interception*: run the check of :meth:`_check_interception`
+        first; *on_local_subnet*: the target is on a network this computer is
+        attached to."""
+        self.check_interception = check_interception
+        self.target_on_subnet = on_local_subnet
         self.target, self.address = target, address
         self.icmp_check = icmp_check
         self.t = transport
@@ -679,12 +710,86 @@ class Discoverer:
         except Exception:  # noqa: BLE001 - a failed check is no answer, never a failed run
             self.d.icmp_checks[ttl] = None
 
+    def _interception_round(self, ttl: int) -> list[probe.FlowAnswer]:
+        """Both check flows at *ttl*, each counted and paced like any probe."""
+        spacing = 1.0 / self.o.rate + 1e-4
+        sent = set()
+        for flow in INTERCEPTION_FLOWS:
+            if self._last_send is not None:
+                while (left := self._last_send + spacing - self.clock()) > 0:
+                    self.t.read(left)
+            self._last_send = self.clock()
+            self._seq = (self._seq + 1) & 0xFFFF
+            self.d.probes_sent += 1
+            if self.t.send(flow, ttl, self._seq) is not False:
+                sent.add(self._seq)
+        answers: list[probe.FlowAnswer] = []
+        deadline = self.clock() + WAIT
+        pending = set(sent)
+        while pending and self.clock() < deadline and not self._stopping():
+            for answer in self.t.read(min(0.1, max(0.0, deadline - self.clock()))):
+                if answer.seq in pending:
+                    pending.discard(answer.seq)
+                    answers.append(answer)
+        for seq in pending:
+            getattr(self.t, "forget", lambda s: None)(seq)
+        return answers
+
+    def _icmp_answer(self, ttl: int) -> str | None:
+        if self.icmp_check is None:
+            return None
+        self.d.probes_sent += 1
+        try:
+            return self.icmp_check(ttl)
+        except Exception:  # noqa: BLE001 - a failed check is no answer, never a failed run
+            return None
+
+    def _check_interception(self):
+        """A SYN with TTL 1 or 2 must die at a router. A connection completed
+        or refused that close means something local or adjacent answered in
+        the target's place: a proxy, as SASE clients run on TCP 443. It does
+        not count when the target really is that close: on a local subnet, or
+        also reached by an ICMP echo at the same TTL. A completed and a
+        refused connect are held to the same guard.
+
+        The first hop is compared across protocols for split routes (ICMP
+        direct, TCP tunnelled) only when both a router's ICMP answer to the
+        TCP probe and the ICMP echo's answer exist: a silent side says
+        nothing about a split."""
+        d = self.d
+        result = {"checked": True, "intercepted": False, "condition": None, "guard": None, "split_hop1": None}
+        tcp_hop1: list[str] = []
+        icmp_hop1 = None
+        for ttl in INTERCEPTION_TTLS:
+            answers = self._interception_round(ttl)
+            if ttl == 1:
+                tcp_hop1 = [a.address for a in answers if a.connect is None and a.address]
+                icmp_hop1 = self._icmp_answer(1)
+            how = next((h for h in ("completed", "refused") if any(a.connect == h for a in answers)), None)
+            if how is None:
+                continue
+            result["condition"] = f"connect_{how}_at_ttl_{ttl}"
+            echo = icmp_hop1 if ttl == 1 else self._icmp_answer(ttl)
+            if self.target_on_subnet:
+                result["guard"] = "target_on_local_subnet"
+            elif echo == self.address:
+                result["guard"] = "icmp_echo_reached_target"
+            result["intercepted"] = result["guard"] is None
+            break
+        if tcp_hop1 and icmp_hop1 and icmp_hop1 not in tcp_hop1:
+            result["split_hop1"] = {"tcp": tcp_hop1[0], "icmp": icmp_hop1}
+        d.interception = result
+        log.info("event=paths_interception target=%s intercepted=%s condition=%s guard=%s",
+                 tag(self.target), result["intercepted"], result["condition"], result["guard"])
+
     # ---------------------------------------------------------------- run
     def run(self) -> Discovery:
         d = self.d
         m = 0
         gap = 0
         try:
+            if self.check_interception:
+                self._check_interception()
             for ttl in range(1, self.o.max_hops + 1):
                 if self._stopping():
                     break
@@ -1004,25 +1109,49 @@ def available() -> tuple[bool, str]:
 
 def discover(target: str, *, family: str = "auto", options: Options | None = None,
              cancel: threading.Event | None = None, deadline: float | None = None,
-             on_progress: Callable[[dict], None] | None = None, address: str | None = None) -> Discovery:
+             on_progress: Callable[[dict], None] | None = None, address: str | None = None,
+             interface=None) -> Discovery:
     """Discover the paths to *target* (a validated hostname or address) with
     the built-in Paris prober. Blocking: run it in a worker thread. *address*
     is the target's address when the caller has resolved it already (the
     address it shows, :func:`routemap_engine.dnstime.resolve_target`); otherwise
-    it is resolved here, once."""
+    it is resolved here, once. *interface*: an adapter name or id to probe
+    out of (None: the system route)."""
     ok, why = available()
     if not ok:
         raise RuntimeError(why)
     address = address or probe.resolve(target, family)
-    probe.check_route(address)
+    binding = probe.bound_route(interface, address)
+    if binding is None:
+        probe.check_route(address)
     tcp = probe.flow_method() == probe.TcpFlowTransport.METHOD
-    transport = probe.TcpFlowTransport(address) if tcp else probe.FlowTransport(address)
-    return Discoverer(target, address, transport, options=options, cancel=cancel,
-                      deadline=deadline, on_progress=on_progress,
-                      icmp_check=icmp_checker(address) if tcp else None).run()
+    transport = (probe.TcpFlowTransport(address, binding=binding) if tcp
+                 else probe.FlowTransport(address, binding=binding))
+    d = Discoverer(target, address, transport, options=options, cancel=cancel,
+                   deadline=deadline, on_progress=on_progress,
+                   icmp_check=icmp_checker(address, binding=binding) if tcp else None,
+                   check_interception=tcp, on_local_subnet=tcp and _on_local_subnet(address)).run()
+    if binding is None:
+        d.interface = interfaces.used_for(address)
+    elif d.stopped_by == "local_error" and any(r.split()[0] in NO_ROUTE_ERRORS for r in d.local_failure_reasons):
+        # The hop-1 check has nothing to say about probes that never left.
+        d.interface = interfaces.InterfaceUse.of(binding.adapter, True, interfaces.NO_ROUTE)
+    else:
+        d.interface = interfaces.use_after_run(binding, d.responders.get(1) or [])
+    return d
 
 
-def icmp_checker(address: str, wait: float = WAIT) -> Callable[[int], str | None] | None:
+NO_ROUTE_ERRORS = ("ENETUNREACH", "EHOSTUNREACH", "WSAENETUNREACH", "WSAEHOSTUNREACH")
+
+
+def _on_local_subnet(address: str) -> bool:
+    try:
+        return interfaces.on_local_subnet(address, interfaces.list_adapters())
+    except OSError:
+        return False
+
+
+def icmp_checker(address: str, wait: float = WAIT, binding=None) -> Callable[[int], str | None] | None:
     """One ICMP echo to *address* at a given TTL with the built-in prober
     (Windows' ICMP function, no administrator rights), or None where the
     prober cannot run for that family."""
@@ -1032,5 +1161,7 @@ def icmp_checker(address: str, wait: float = WAIT) -> Callable[[int], str | None
 
     def check(ttl: int) -> str | None:
         seq[0] = (seq[0] + 1) & 0xFFFF
+        if binding is not None:
+            return probe._probe(address, ttl, seq[0], wait, binding).address
         return probe._probe(address, ttl, seq[0], wait).address
     return check

@@ -75,6 +75,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from routemap_engine import interfaces
+
 log = logging.getLogger("routemap_engine.probe")
 
 MAX_HOPS = 30
@@ -118,6 +120,29 @@ def check_route(dst: str) -> None:
     except OSError as exc:
         raise NoRoute(f"This machine has no IPv{family_of(dst)} route to {dst} "
                       f"({exc.strerror or exc}). Is IPv{family_of(dst)} working on this network?") from None
+
+
+class NoRouteOnInterface(NoRoute):
+    """The adapter the user chose has no route to the target. Nothing is sent
+    by another way: falling back would measure a path the user did not ask for."""
+
+
+def bound_route(interface, dst: str) -> "interfaces.Binding | None":
+    """The binding for *interface* (a name, an id or a Binding; None for the
+    system route), once its route to *dst* is known to exist. Raises
+    :class:`NoRouteOnInterface`, or :class:`interfaces.InterfaceError` when the
+    adapter cannot be used."""
+    if interface is None:
+        return None
+    binding = interface if isinstance(interface, interfaces.Binding) else interfaces.bind(interface, dst)
+    if not interfaces.route_exists(binding, dst):
+        raise NoRouteOnInterface(no_route_text(binding.adapter.label, dst))
+    return binding
+
+
+def no_route_text(label: str, dst: str) -> str:
+    return (f"{label} has no route to {dst}. A connected VPN can disable this adapter's default route. "
+            f"Nothing was sent through any other adapter.")
 
 
 def resolve(target: str, family: str = "auto", *, getaddrinfo=None) -> str:
@@ -289,10 +314,13 @@ def _read_errqueue(sock: socket.socket, af: int) -> tuple[bytes, str | None]:
     return sent, None
 
 
-def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
+def _posix_probe(dst: str, ttl: int, seq: int, wait: float, binding=None) -> Reply:
     af = family_of(dst)
     sock = _icmp_socket(af)
     try:
+        if binding is not None:
+            binding.apply(sock, af)
+            sock.bind((binding.source, 0))
         _set_hops(sock, af, ttl)
         linux = sys.platform.startswith("linux")
         if linux:
@@ -301,7 +329,7 @@ def _posix_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
             else:
                 sock.setsockopt(socket.IPPROTO_IP, IP_RECVERR, 1)
         ident = os.getpid() & 0xFFFF
-        src = _source_for(dst) if af == 6 else None
+        src = (binding.source if binding is not None else _source_for(dst)) if af == 6 else None
         sock.setblocking(False)
         start = time.perf_counter()
         sock.sendto(_echo(ident, seq, af=af, src=src, dst=dst), (dst, 0))
@@ -382,6 +410,11 @@ def _windows_api():
                                  ctypes.POINTER(IP_OPTION_INFORMATION), ctypes.c_void_p, wintypes.DWORD,
                                  wintypes.DWORD]
     lib.IcmpSendEcho.restype = wintypes.DWORD
+    lib.IcmpSendEcho2Ex.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, wintypes.WORD,
+                                    ctypes.POINTER(IP_OPTION_INFORMATION), ctypes.c_void_p, wintypes.DWORD,
+                                    wintypes.DWORD]
+    lib.IcmpSendEcho2Ex.restype = wintypes.DWORD
     lib.Icmp6CreateFile.restype = wintypes.HANDLE
     lib.Icmp6SendEcho2.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
                                    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wintypes.WORD,
@@ -407,9 +440,9 @@ def _windows_status(status: int, address: str, dst: str, rtt: float) -> Reply:
     return Reply(None, None)
 
 
-def _windows_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
+def _windows_probe(dst: str, ttl: int, seq: int, wait: float, binding=None) -> Reply:
     if family_of(dst) == 6:
-        return _windows_probe6(dst, ttl, wait)
+        return _windows_probe6(dst, ttl, wait, binding)
     ctypes, lib, Options, EchoReply = _windows_api()
     handle = lib.IcmpCreateFile()
     try:
@@ -419,8 +452,15 @@ def _windows_probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
         reply = ctypes.create_string_buffer(size)
         dest = struct.unpack("<I", socket.inet_aton(dst))[0]
         start = time.perf_counter()
-        count = lib.IcmpSendEcho(handle, dest, request, len(PAYLOAD), ctypes.byref(options), reply, size,
-                                 int(wait * 1000))
+        if binding is None:
+            count = lib.IcmpSendEcho(handle, dest, request, len(PAYLOAD), ctypes.byref(options), reply, size,
+                                     int(wait * 1000))
+        else:
+            # The strong host send model keeps a packet with this source on
+            # the adapter that owns it (module docstring of interfaces).
+            source = struct.unpack("<I", socket.inet_aton(binding.source))[0]
+            count = lib.IcmpSendEcho2Ex(handle, None, None, None, source, dest, request, len(PAYLOAD),
+                                        ctypes.byref(options), reply, size, int(wait * 1000))
         # The same high-resolution clock as the POSIX probes. RoundTripTime is
         # whole milliseconds and was used at 10 ms and above, so every hop
         # past the access network read 26.000, 252.000 (ODIN, 4 Oct 2026).
@@ -442,7 +482,7 @@ _V6_REPLY_STATUS = slice(26, 30)
 _V6_REPLY_SIZE = 34
 
 
-def _windows_probe6(dst: str, ttl: int, wait: float) -> Reply:
+def _windows_probe6(dst: str, ttl: int, wait: float, binding=None) -> Reply:
     ctypes, lib, Options, _ = _windows_api()
     handle = lib.Icmp6CreateFile()
     try:
@@ -450,7 +490,7 @@ def _windows_probe6(dst: str, ttl: int, wait: float) -> Reply:
         request = ctypes.create_string_buffer(PAYLOAD, len(PAYLOAD))
         size = _V6_REPLY_SIZE + len(PAYLOAD) + 8 + 64
         reply = ctypes.create_string_buffer(size)
-        src = ctypes.create_string_buffer(_sockaddr_in6(_source_for(dst)), 28)
+        src = ctypes.create_string_buffer(_sockaddr_in6(binding.source if binding is not None else _source_for(dst)), 28)
         dest = ctypes.create_string_buffer(_sockaddr_in6(dst), 28)
         start = time.perf_counter()
         count = lib.Icmp6SendEcho2(handle, None, None, None, src, dest, request, len(PAYLOAD),
@@ -486,6 +526,7 @@ class FlowAnswer:
     address: str
     reached: bool
     at: float                    # perf_counter() when read
+    connect: str | None = None   # TCP probes: "completed" or "refused" when the connect itself ended that way
 
 
 def flow_checksum(flow: int) -> int:
@@ -625,14 +666,15 @@ class TcpFlowTransport:
 
     def __init__(self, dst: str, port: int = TCP_FLOW_PORT, *, socket_factory=None, clock=time.perf_counter,
                  select=None, expire_after: float = 3.0, source_for=None, windows: bool | None = None,
-                 sleep=time.sleep, reuse_gap: float = TCP_REUSE_GAP, no_retransmit=None):
+                 sleep=time.sleep, reuse_gap: float = TCP_REUSE_GAP, no_retransmit=None, binding=None):
         import select as _select
         self.dst, self.port = dst, port
         self.af = family_of(dst)
         # Bound to the address the system routes *dst* from, never to every
         # interface: a probe must not leave from another adapter (a VPN or a
         # tailnet on a multi-homed machine).
-        self.src = (source_for or _source_for)(dst)
+        self.binding = binding
+        self.src = binding.source if binding is not None else (source_for or _source_for)(dst)
         self.windows = sys.platform.startswith("win") if windows is None else windows
         self._socket = socket_factory or socket.socket
         self._clock = clock
@@ -689,6 +731,8 @@ class TcpFlowTransport:
             sock = self._socket(socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if self.binding is not None:
+                    self.binding.apply(sock, self.af)
                 sock.bind((self.src, kept or 0))
                 if kept is None:
                     self._ports[flow] = sock.getsockname()[1]
@@ -765,7 +809,7 @@ class TcpFlowTransport:
             err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
             flow = self._open[seq][1]
             if err in (0, WSAECONNREFUSED, errno.ECONNREFUSED):
-                out.append(FlowAnswer(seq, self.dst, True, now))
+                out.append(FlowAnswer(seq, self.dst, True, now, "completed" if err == 0 else "refused"))
                 self._reached[flow] = now
             elif self.windows:
                 try:
@@ -801,11 +845,12 @@ class FlowTransport:
 
     METHOD = "icmp-paris"
 
-    def __init__(self, dst: str):
+    def __init__(self, dst: str, binding=None):
         self.dst = dst
         self.af = family_of(dst)
         self.linux = sys.platform.startswith("linux")
-        self.bind_src = _source_for(dst)
+        self.binding = binding
+        self.bind_src = binding.source if binding is not None else _source_for(dst)
         self.src = self.bind_src if self.af == 6 else None
         self._socks: dict[int, socket.socket] = {}
         self._idents: dict[int, int] = {}
@@ -816,6 +861,9 @@ class FlowTransport:
         if not self.linux:
             if self._shared is None:
                 self._shared = _icmp_socket(self.af)
+                if self.binding is not None:
+                    self.binding.apply(self._shared, self.af)
+                    self._shared.bind((self.binding.source, 0))
                 self._shared.setblocking(False)
             self._idents.setdefault(flow, (self._base + flow) & 0xFFFF)
             return self._shared
@@ -824,6 +872,8 @@ class FlowTransport:
             sock = _icmp_socket(self.af)
             # Bound to the routed source address, never every interface (the
             # kernel picks the port, which is the ICMP identifier).
+            if self.binding is not None:
+                self.binding.apply(sock, self.af)
             if self.af == 6:
                 sock.setsockopt(socket.IPPROTO_IPV6, IPV6_RECVERR, 1)
             else:
@@ -912,10 +962,10 @@ def available(family: int = 4) -> tuple[bool, str]:
     return _posix_available(family)
 
 
-def _probe(dst: str, ttl: int, seq: int, wait: float) -> Reply:
+def _probe(dst: str, ttl: int, seq: int, wait: float, binding=None) -> Reply:
     if sys.platform.startswith("win"):
-        return _windows_probe(dst, ttl, seq, wait)
-    return _posix_probe(dst, ttl, seq, wait)
+        return _windows_probe(dst, ttl, seq, wait, binding)
+    return _posix_probe(dst, ttl, seq, wait, binding)
 
 
 def format_hop(ttl: int, replies: list[Reply]) -> list[str]:
@@ -944,12 +994,16 @@ def format_hop(ttl: int, replies: list[Reply]) -> list[str]:
 def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait: float = WAIT_SECONDS,
           on_line: Callable[[str], None] | None = None, cancel: threading.Event | None = None,
           deadline: float | None = None, family: str = "auto",
-          address: str | None = None) -> tuple[str, bool, bool]:
+          address: str | None = None, interface=None) -> tuple[str, bool, bool]:
     """Trace *target* (a validated hostname or address) over IPv4 or IPv6
     (*family*: "auto", "4" or "6"), to *address* when the caller resolved it
-    already. Returns (text, cancelled, timed_out)."""
+    already, out of *interface* (an adapter name or id, or a
+    :class:`interfaces.Binding`; None: the system route, which is the code
+    path every earlier version ran). Returns (text, cancelled, timed_out)."""
     dst = address or resolve(target, family)
-    check_route(dst)
+    binding = bound_route(interface, dst)
+    if binding is None:
+        check_route(dst)
     max_hops = max(1, min(int(max_hops), MAX_TTL))
     queries = max(1, min(int(queries), MAX_QUERIES))
     wait = max(0.1, min(float(wait), MAX_WAIT_SECONDS))
@@ -981,7 +1035,7 @@ def trace(target: str, *, max_hops: int = MAX_HOPS, queries: int = QUERIES, wait
             if deadline is not None and time.monotonic() > deadline:
                 return "\n".join(out) + "\n", False, True
             seq = (seq + 1) & 0xFFFF
-            replies.append(_probe(dst, ttl, seq, wait))
+            replies.append(_probe(dst, ttl, seq, wait) if binding is None else _probe(dst, ttl, seq, wait, binding))
         for line in format_hop(ttl, replies):
             emit(line)
         if any(r.reached for r in replies):

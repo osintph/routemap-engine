@@ -80,7 +80,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
-from routemap_engine import geo, probe
+from routemap_engine import geo, interfaces, probe
 from routemap_engine.parse import Hop
 
 log = logging.getLogger("routemap_engine.watch")
@@ -174,6 +174,7 @@ class WatchOptions:
     duration: float = DURATION_DEFAULT
     max_cycles: int | None = None
     family: str = "auto"                 # "auto", "4" or "6", as probe.resolve
+    interface: str | None = None         # an adapter to probe out of (0.9.0); None: the system route
 
     def clamped(self) -> "WatchOptions":
         """The same options with every value forced into its allowed range."""
@@ -182,7 +183,8 @@ class WatchOptions:
                             max_hops=int(_clamp(self.max_hops, 1, probe.MAX_HOPS, probe.MAX_HOPS)),
                             duration=_clamp(self.duration, DURATION_MIN, DURATION_MAX, DURATION_DEFAULT),
                             max_cycles=cycles,
-                            family=self.family if self.family in probe.FAMILIES else "auto")
+                            family=self.family if self.family in probe.FAMILIES else "auto",
+                            interface=self.interface)
 
 
 # --------------------------------------------------------------- statistics ---
@@ -363,6 +365,7 @@ class Session:
     stopped_by: str | None = None
     ended_wall: float | None = None
     resets: list[float] = field(default_factory=list)
+    interface: interfaces.InterfaceUse | None = None   # kept out of to_dict(), the export adds it
 
     def hops(self) -> list[dict]:
         """One dict per hop, in hop order, with the running figures and the
@@ -471,10 +474,15 @@ class Watch:
     # the loop
     def run(self) -> Session:
         dst = str(ipaddress.ip_address(self.resolve(self.target)))
-        if self.probe_fn is _BUILT_IN_PROBE:
+        built_in = self.probe_fn is _BUILT_IN_PROBE
+        binding = probe.bound_route(self.options.interface, dst) if built_in else None
+        if built_in and binding is None:
             probe.check_route(dst)        # a scripted probe function has no routes to check
+        send = self.probe_fn if binding is None else (lambda d, t, q, w: self.probe_fn(d, t, q, w, binding))
         opts = self.options
         s = self.session = Session(target=self.target, address=dst, options=opts, started_wall=self.wall())
+        if built_in and binding is None:
+            s.interface = interfaces.used_for(dst)
         tracker = PathTracker()
         seq = secrets.randbelow(0x10000)
 
@@ -517,7 +525,7 @@ class Watch:
                     if self._stop.is_set():
                         break
                     seq = (seq + 1) & 0xFFFF
-                    futures.append((ttl, pool.submit(self.probe_fn, dst, ttl, seq, WAIT)))
+                    futures.append((ttl, pool.submit(send, dst, ttl, seq, WAIT)))
                     if ttl < depth:
                         self._sleep(spacing)
                 results = {}
@@ -576,6 +584,8 @@ class Watch:
             if self._stop.is_set() and s.stopped_by is None:
                 s.stopped_by = "user"
         s.ended_wall = self.wall()
+        if binding is not None:
+            s.interface = interfaces.use_after_run(binding, s.addresses.get(1) or [])
         return s
 
     def _depth(self, s: Session) -> int:

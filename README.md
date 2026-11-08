@@ -130,6 +130,33 @@ multipath.discover("example.com", address=resolved.address)
   `--place ip` the server's place is looked up at RIPEstat (which then sees
   the server's address); only the place is printed, never the address.
 
+### Behind a VPN or SASE client (0.9.0)
+
+```python
+from routemap_engine import interfaces, multipath, run_trace, TraceOptions
+
+for a in interfaces.list_adapters():        # asked of the OS on every call
+    print(a.name, a.description, a.kind, a.up, a.addresses, a.gateways)
+
+result = run_trace("example.com", TraceOptions(interface="en0"))   # None: the system route
+result.interface.kind, result.interface.check                      # hop-1 check on a chosen adapter
+multipath.discover("example.com").to_dict().get("interception")    # Paths over TCP (Windows)
+```
+
+- **Adapters** are the OS's own list, with the OS's names. Nothing in the code
+  names a product. `kind` is `physical`, `tunnel` or `unclassified`, from the
+  OS's type fields only.
+- **`interface=`** forces egress on each OS and refuses the run where it cannot
+  (`interfaces.NotForced`); there is no silent fallback to the system route.
+- **The hop-1 check** says `consistent`, `redirected` or `unconfirmed`. Some
+  clients intercept at driver level and ignore socket binding; a run is never
+  proof of a direct path.
+- **The TCP interception check** names the condition that triggered it
+  (`connect_completed_at_ttl_1`, `connect_refused_at_ttl_2`, ...) and the guard
+  that excused it (`target_on_local_subnet`, `icmp_echo_reached_target`).
+- Adapter names, local addresses and gateways are read locally and never sent
+  anywhere by the engine. Log lines carry them only through `logsafe.tag()`.
+
 ## What is sent where
 
 | Source | Sends | To |
@@ -142,7 +169,7 @@ multipath.discover("example.com", address=resolved.address)
 | `watch.Watch` | ICMP echo probes (ICMPv6 over IPv6) with rising TTL, one per hop per cycle | the target, and the routers on the way |
 | `dnstime.measure` | the target's name (A and AAAA queries) | the system resolver, and each resolver the caller names |
 | `ports.check_ports` | one TCP connection attempt per port, and a TLS ClientHello with the target's name for TLS ports | the target's address |
-| `multipath.discover` | ICMP echo probes (macOS, Linux) or TCP SYNs to port 443 (Windows) with rising TTL, plus one ICMP echo per hop silent to TCP | the target, and the routers on the way |
+| `multipath.discover` | ICMP echo probes (macOS, Linux) or TCP SYNs to port 443 (Windows) with rising TTL, plus one ICMP echo per hop silent to TCP; over TCP also two flows at TTL 1 and 2 and up to two ICMP echoes for the interception check | the target, and the routers on the way |
 | `agent` with `--place ip` | the server's own address, as for this machine's origin | stat.ripe.net |
 
 Private, CGNAT and reserved addresses are never looked up. Each upstream has its
