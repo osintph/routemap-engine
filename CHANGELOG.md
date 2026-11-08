@@ -2,6 +2,47 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
+## [0.9.0] - 2026-11-08
+
+Accuracy behind VPN and SASE clients.
+
+### Added
+
+- **`routemap_engine.interfaces`**: the computer's network adapters, read
+  from the OS on every call (standard library only, local OS calls only). No
+  product or adapter name appears in the code: an adapter carries the name
+  its own software registered, and is classified `physical`, `tunnel` or
+  `unclassified` from the OS's type fields alone, `unclassified` where those
+  give no clear answer.
+- **`interface=`** on `TraceOptions`, `probe.trace`, `multipath.discover` and
+  `WatchOptions`: an adapter id or OS name to probe out of. None, the default,
+  is the code path of earlier versions. Binding forces egress on each OS
+  (`IP_UNICAST_IF` and `IPV6_UNICAST_IF` on Windows sockets, the source
+  address on `IcmpSendEcho2Ex` and `Icmp6SendEcho2`, `IP_BOUND_IF` and
+  `IPV6_BOUND_IF` on macOS, `SO_BINDTODEVICE` on Linux), and a Linux system
+  tool gets `traceroute -i` or `mtr -I`. A tool or system that cannot force
+  the adapter refuses the run (`interfaces.NotForced`); nothing is sent on the
+  system route instead.
+- **`TraceResult.interface`, `Discovery.interface`, `Session.interface`**: an
+  `interfaces.InterfaceUse` with the adapter used. They stay out of
+  `to_dict()`; `InterfaceUse.to_export()` gives kind and label, with local
+  addresses and gateways only when asked for.
+- **Hop-1 check** after a run on a chosen adapter: `consistent`, `redirected`
+  (hop 1 belongs to another adapter, named in `redirected_by`) or
+  `unconfirmed`. `probe.NoRouteOnInterface` is raised before anything is sent
+  when the chosen adapter has no route to the target, and a run that fails
+  locally with no route reports `no_route`; the hop-1 check is skipped then.
+- **TCP interception check** on Paths over TCP: `interception` in the paths
+  block of the route (schema updated, additive). Two flows at TTL 1 and 2. A
+  connect completed or refused that close counts as interception unless the
+  target is on a local subnet or an ICMP echo reaches it at the same TTL;
+  `condition` and `guard` name which. `split_hop1` holds the TCP and ICMP
+  hop-1 responders only when both answered and differ.
+
+### Changed
+
+- `probe.FlowAnswer` has a `connect` field; existing positional use is unchanged.
+
 ## [0.8.2] - 2026-10-29
 
 Published 2026-10-29 to PyPI and GitHub Releases.

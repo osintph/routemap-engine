@@ -94,6 +94,8 @@ class TraceOptions:
     # address it shows, dnstime.resolve_target). None: resolved here, once.
     address: str | None = None
     timeout: float = DEFAULT_TIMEOUT_SECONDS
+    # An adapter to probe out of, by id or OS name (0.9.0). None: the system route.
+    interface: str | None = None
     cancel: threading.Event | None = None
     on_line: Callable[[str], None] | None = None
     # Extra environment, merged over os.environ. Tests use it; nothing else needs to.
@@ -110,6 +112,7 @@ class TraceResult:
     timed_out: bool = False
     seconds: float = 0.0
     address: str | None = None             # 0.8.0: the address traced, the one the tool was given
+    interface: object | None = None        # 0.9.0: interfaces.InterfaceUse, None when it could not be told
 
 
 def _platform() -> str:
@@ -281,6 +284,38 @@ def with_family(tool: str, argv: list[str], family: int) -> list[str]:
     return argv
 
 
+def with_interface(tool: str, argv: list[str], binding) -> list[str]:
+    """*argv* for a system tool, sent out of the chosen adapter: Linux
+    traceroute -i and mtr -I (their man pages). No other system tool can force
+    the adapter: tracert has no such option, and macOS traceroute -i only
+    picks the source address. The run is refused rather than sent on the
+    system route."""
+    from routemap_engine import interfaces
+    if _platform() == "linux" and tool in (TOOL_TRACEROUTE, TOOL_MTR):
+        flag = "-i" if tool == TOOL_TRACEROUTE else "-I"
+        return [*argv[:-1], flag, binding.adapter.name, argv[-1]]
+    raise interfaces.NotForced(f"The {tool} tool cannot be told which interface to use. Nothing was sent. "
+                               f"Use the built-in prober, or Automatic.")
+
+
+def _first_hop(text: str) -> list[str]:
+    from routemap_engine.parse import TraceParseError, parse_trace
+    try:
+        hops = parse_trace(text).hops
+    except (TraceParseError, ValueError):
+        return []
+    return next((list(h.addresses) for h in hops if h.hop == 1), [])
+
+
+def _with_interface(result: TraceResult, binding, address: str) -> TraceResult:
+    """The adapter the run used: the one the system routes through, or, on a
+    chosen adapter, that one with the hop-1 check."""
+    from routemap_engine import interfaces
+    result.interface = (interfaces.used_for(address) if binding is None
+                        else interfaces.use_after_run(binding, _first_hop(result.text)))
+    return result
+
+
 def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     """Run one trace and return what the tool printed.
 
@@ -299,17 +334,20 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     # on 0.4.0-beta.2: 151.101.0.81 for one run, 151.101.192.81 for the next).
     address = validate_target(options.address) if options.address else probe.resolve(name, options.family)
     family = probe.family_of(address)
+    binding = probe.bound_route(options.interface, address)
     if tool == TOOL_ICMP:
         argv = build_argv(tool, executable, name, options.flags)
-        result = _run_builtin(argv, options, family, address)
+        result = _run_builtin(argv, options, family, address, binding)
         if result is not None:
-            return result
+            return _with_interface(result, binding, address)
         # The built-in prober cannot run for this family here: the system tool.
         tool, executable = pick_tool(TOOL_TRACERT if _platform() == "windows" else TOOL_TRACEROUTE)
         argv = build_argv(tool, executable, address, None)
     else:
         argv = build_argv(tool, executable, address, options.flags)
     argv = with_family(tool, argv, family)
+    if binding is not None:
+        argv = with_interface(tool, argv, binding)
 
     env = dict(os.environ)
     env.update(options.env)
@@ -359,9 +397,10 @@ def run_trace(target: str, options: TraceOptions | None = None) -> TraceResult:
     watcher.join(timeout=1.0)
 
     text = "\n".join(lines).strip("\n") + "\n" if lines else ""
-    return TraceResult(text=text, tool=tool, argv=argv, returncode=returncode,
-                       cancelled=cancelled, timed_out=timed_out,
-                       seconds=round(time.monotonic() - started, 2), address=address)
+    return _with_interface(TraceResult(text=text, tool=tool, argv=argv, returncode=returncode,
+                                       cancelled=cancelled, timed_out=timed_out,
+                                       seconds=round(time.monotonic() - started, 2), address=address),
+                           binding, address)
 
 
 def _flag(flags: list[str], name: str, default: float) -> float:
@@ -372,7 +411,7 @@ def _flag(flags: list[str], name: str, default: float) -> float:
 
 
 def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4,
-                 address: str | None = None) -> TraceResult | None:
+                 address: str | None = None, binding=None) -> TraceResult | None:
     """The built-in ICMP prober with the -m/-q/-w values in *argv*, over
     *family*. None when the prober cannot open a socket of that family here
     (Linux without ping_group_range, say), so the system tool runs instead."""
@@ -384,7 +423,8 @@ def _run_builtin(argv: list[str], options: TraceOptions, family: int = 4,
     text, cancelled, timed_out = probe.trace(
         target, max_hops=int(_flag(flags, "-m", probe.MAX_HOPS)), queries=int(_flag(flags, "-q", probe.QUERIES)),
         wait=_flag(flags, "-w", probe.WAIT_SECONDS), on_line=options.on_line, cancel=options.cancel,
-        deadline=started + options.timeout, family=str(family), address=address)
+        deadline=started + options.timeout, family=str(family), address=address,
+        **({} if binding is None else {"interface": binding}))
     return TraceResult(text=text, tool=TOOL_ICMP, argv=argv, returncode=0, cancelled=cancelled,
                        timed_out=timed_out, seconds=round(time.monotonic() - started, 2),
                        address=address)

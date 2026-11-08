@@ -852,6 +852,66 @@
             null
           ],
           "description": "0.8.0: who answered the ICMP check where TCP went silent: a router (the network does not answer TCP probes) or the target itself (something in front of it answers for its TCP service)."
+        },
+        "interception": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "0.9.0: the TCP interception check of a Paths run over TCP. intercepted is true when a connect completed or was refused at TTL 2 or less and no guard applied; condition names what triggered it, guard what excused it.",
+          "required": [
+            "checked",
+            "intercepted",
+            "condition",
+            "guard",
+            "split_hop1"
+          ],
+          "properties": {
+            "checked": {
+              "enum": [
+                true
+              ]
+            },
+            "intercepted": {
+              "type": "boolean"
+            },
+            "condition": {
+              "enum": [
+                null,
+                "connect_completed_at_ttl_1",
+                "connect_completed_at_ttl_2",
+                "connect_refused_at_ttl_1",
+                "connect_refused_at_ttl_2"
+              ]
+            },
+            "guard": {
+              "enum": [
+                null,
+                "target_on_local_subnet",
+                "icmp_echo_reached_target"
+              ]
+            },
+            "split_hop1": {
+              "description": "The hop-1 responders over TCP and ICMP when both answered and differ; otherwise null.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": false,
+              "required": [
+                "tcp",
+                "icmp"
+              ],
+              "properties": {
+                "tcp": {
+                  "type": "string",
+                  "maxLength": 45
+                },
+                "icmp": {
+                  "type": "string",
+                  "maxLength": 45
+                }
+              }
+            }
+          }
         }
       }
     },
