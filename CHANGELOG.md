@@ -2,7 +2,7 @@
 
 Keep a Changelog format; this project uses Semantic Versioning.
 
-## [0.9.0] - 2026-11-08
+## [0.9.0] - 2026-11-09
 
 Accuracy behind VPN and SASE clients.
 
